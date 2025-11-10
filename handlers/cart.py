@@ -1,128 +1,105 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import Session, Cart, Product, DiscountCode
-from utils.helpers import format_price_eur, format_price_usd
-import config
+from database import get_db_connection
+from utils.helpers import format_price_display, convert_eur_to_usd
 
-async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    product_id = query.data.split("_")[3]
     user_id = update.effective_user.id
     
-    with Session() as session:
-        cart_items = session.query(Cart).filter_by(user_id=user_id).all()
-        products = []
-        total_eur = 0
-        
-        for item in cart_items:
-            product = session.query(Product).filter_by(id=item.product_id).first()
-            if product:
-                products.append({
-                    'id': product.id,
-                    'name': product.name,
-                    'price': product.price_eur,
-                    'quantity': item.quantity
-                })
-                total_eur += product.price_eur * item.quantity
-        
-        # Check for discount code
-        discount_code = context.user_data.get('discount_code')
-        discount_percent = 0
-        if discount_code:
-            discount = session.query(DiscountCode).filter_by(
-                code=discount_code, is_active=True, used=False
-            ).first()
-            if discount:
-                # Check if discount is user-specific
-                if discount.user_id and discount.user_id != user_id:
-                    discount = None
-                elif discount.username and discount.username != update.effective_user.username:
-                    discount = None
-                else:
-                    discount_percent = discount.discount_percent
-        
-        if discount_percent > 0:
-            discount_amount = total_eur * (discount_percent / 100)
-            total_eur -= discount_amount
+    conn = get_db_connection()
+    # Check if product is already in cart
+    existing = conn.execute('SELECT * FROM cart WHERE user_id = ? AND product_id = ?', (user_id, product_id)).fetchone()
+    if existing:
+        conn.execute('UPDATE cart SET quantity = quantity + 1 WHERE user_id = ? AND product_id = ?', (user_id, product_id))
+    else:
+        conn.execute('INSERT INTO cart (user_id, product_id) VALUES (?, ?)', (user_id, product_id))
+    conn.commit()
+    conn.close()
     
-    if not products:
-        await update.callback_query.edit_message_text(
-            "Your cart is empty.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛍️ Browse Products", callback_data="products")]])
-        )
+    await query.answer("✅ Product added to cart!")
+
+async def view_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    
+    conn = get_db_connection()
+    cart_items = conn.execute('''SELECT cart.*, products.name, products.price, products.image_id 
+                               FROM cart JOIN products ON cart.product_id = products.id 
+                               WHERE cart.user_id = ?''', (user_id,)).fetchall()
+    conn.close()
+    
+    if not cart_items:
+        keyboard = [
+            [InlineKeyboardButton("🛍️ Browse Products", callback_data="view_products")],
+            [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("🛒 Your cart is empty!", reply_markup=reply_markup)
         return
     
-    text = "🛒 Your Cart:\n\n"
-    for product in products:
-        text += f"📦 {product['name']}\n"
-        text += f"   Quantity: {product['quantity']}\n"
-        text += f"   Price: {format_price_eur(product['price'] * product['quantity'])}\n\n"
+    total_eur = 0
+    message = "🛒 Your Cart:\n\n"
     
-    text += f"💶 Total EUR: {format_price_eur(total_eur)}\n"
-    text += f"💵 Total USD: {format_price_usd(total_eur)}\n"
+    for item in cart_items:
+        item_total_eur = item['price'] * item['quantity']
+        total_eur += item_total_eur
+        message += f"🛍️ {item['name']}\n"
+        message += f" 💰 {format_price_display(item['price'])} × {item['quantity']} = {format_price_display(item_total_eur)}\n\n"
     
-    if discount_percent > 0:
-        text += f"🎫 Discount: {discount_percent}% applied!\n"
+    total_usd = convert_eur_to_usd(total_eur)
+    message += f"💵 Total: {format_price_display(total_eur)}"
     
     keyboard = [
-        [InlineKeyboardButton("💰 Checkout", callback_data="checkout")],
-        [InlineKeyboardButton("🎫 Enter Discount Code", callback_data="enter_discount")],
+        [InlineKeyboardButton("💰 Checkout All", callback_data="checkout_cart")],
         [InlineKeyboardButton("🗑️ Clear Cart", callback_data="clear_cart")],
-        [InlineKeyboardButton("🔙 Back", callback_data="main_menu")]
+        [InlineKeyboardButton("🛍️ Continue Shopping", callback_data="view_products")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
     ]
     
-    await update.callback_query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
-async def enter_discount_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.edit_message_text(
-        "Please enter your discount code:",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="cart")]])
-    )
-    return 'WAITING_DISCOUNT_CODE'
-
-async def process_discount_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    code = update.message.text.upper()
+async def clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
     user_id = update.effective_user.id
     
-    with Session() as session:
-        discount = session.query(DiscountCode).filter_by(
-            code=code, is_active=True, used=False
-        ).first()
-        
-        if discount:
-            # Check user-specific conditions
-            if discount.user_id and discount.user_id != user_id:
-                valid = False
-            elif discount.username and discount.username != update.effective_user.username:
-                valid = False
-            else:
-                valid = True
-        else:
-            valid = False
+    conn = get_db_connection()
+    conn.execute('DELETE FROM cart WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
     
-    if valid:
-        context.user_data['discount_code'] = code
-        await update.message.reply_text(
-            "✅ Discount code applied!",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛒 View Cart", callback_data="cart")]])
-        )
-    else:
-        await update.message.reply_text(
-            "❌ Invalid or expired discount code.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛒 View Cart", callback_data="cart")]])
-        )
-    
-    return -1
+    keyboard = [
+        [InlineKeyboardButton("🛍️ Browse Products", callback_data="view_products")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text("🗑️ Cart cleared!", reply_markup=reply_markup)
 
-async def clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def checkout_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
     user_id = update.effective_user.id
     
-    with Session() as session:
-        session.query(Cart).filter_by(user_id=user_id).delete()
-        session.commit()
+    conn = get_db_connection()
+    cart_items = conn.execute('''SELECT cart.*, products.name, products.price, products.image_id 
+                               FROM cart JOIN products ON cart.product_id = products.id 
+                               WHERE cart.user_id = ?''', (user_id,)).fetchall()
+    conn.close()
     
-    await update.callback_query.edit_message_text(
-        "Cart cleared!",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛍️ Browse Products", callback_data="products")]])
-    )
+    if not cart_items:
+        await query.edit_message_text("❌ Cart is empty!")
+        return
+    
+    # Save cart contents
+    context.user_data['cart_items'] = [dict(item) for item in cart_items]
+    total_eur = sum(item['price'] * item['quantity'] for item in cart_items)
+    context.user_data['cart_total'] = total_eur
+    
+    # Ask for discount code before payment
+    from handlers.discount import ask_discount_code
+    await ask_discount_code(update, context, from_cart=True)
