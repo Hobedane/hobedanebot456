@@ -1,74 +1,38 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import Session, CustomMessage
-from utils.helpers import get_message
+from database import get_db_connection
 
-async def admin_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    with Session() as session:
-        messages = session.query(CustomMessage).all()
-        message_dict = {msg.key: msg.value for msg in messages}
+async def show_content(update: Update, context: ContextTypes.DEFAULT_TYPE, content_key: str) -> None:
+    query = update.callback_query
+    await query.answer()
     
-    keyboard = []
-    available_messages = [
-        ('welcome', 'Welcome Message'),
-        ('success_payment', 'Success Payment Message'),
-        ('rules', 'Rules Text'),
-        ('added_to_cart', 'Added to Cart Message'),
-        ('payment_instructions', 'Payment Instructions')
-    ]
+    conn = get_db_connection()
+    content = conn.execute('SELECT * FROM content WHERE key = ? AND active = 1', (content_key,)).fetchone()
+    conn.close()
     
-    for key, description in available_messages:
-        current_value = message_dict.get(key, get_message(key))
-        preview = current_value[:50] + "..." if len(current_value) > 50 else current_value
-        keyboard.append([InlineKeyboardButton(
-            f"✏️ {description}",
-            callback_data=f"edit_message_{key}"
-        )])
+    if not content:
+        await query.edit_message_text("❌ This page is currently unavailable.")
+        return
     
-    keyboard.append([InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_panel")])
+    keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
-    text = "⚙️ Customize Messages\n\nClick on a message to edit it."
-    
-    await update.callback_query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"{content['title']}\n\n{content['content']}",
+        reply_markup=reply_markup
     )
 
-async def edit_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message_key = update.callback_query.data.split('_')[-1]
-    current_value = get_message(message_key)
-    
-    context.user_data['editing_message'] = message_key
-    
-    await update.callback_query.edit_message_text(
-        f"Editing: {message_key}\n\nCurrent value:\n{current_value}\n\n"
-        f"Please send the new value:",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_messages")]])
-    )
-    return 'WAITING_MESSAGE_UPDATE'
+async def about_us(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_content(update, context, "about_us")
 
-async def process_message_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    new_value = update.message.text
-    message_key = context.user_data.get('editing_message')
-    
-    if not message_key:
-        await update.message.reply_text("Error: No message key found.")
-        return -1
-    
-    with Session() as session:
-        existing = session.query(CustomMessage).filter_by(key=message_key).first()
-        if existing:
-            existing.value = new_value
-        else:
-            new_message = CustomMessage(key=message_key, value=new_value)
-            session.add(new_message)
-        session.commit()
-    
-    if 'editing_message' in context.user_data:
-        del context.user_data['editing_message']
-    
-    await update.message.reply_text(
-        f"✅ Message updated successfully!",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_panel")]])
-    )
-    return -1
+async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_content(update, context, "contact")
+
+async def website(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_content(update, context, "website")
+
+async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_content(update, context, "rules")
+
+async def faq(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await show_content(update, context, "faq")
