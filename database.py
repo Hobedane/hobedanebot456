@@ -39,7 +39,7 @@ def init_database():
         eur_to_usd REAL NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
-    # Discount codes
+    # Discount codes - UPDATED WITH USERNAME FIELD
     c.execute('''CREATE TABLE IF NOT EXISTS discount_codes (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE NOT NULL, 
@@ -49,7 +49,8 @@ def init_database():
         used_count INTEGER DEFAULT 0, 
         max_uses INTEGER DEFAULT -1, 
         is_general BOOLEAN DEFAULT 1, 
-        client_id INTEGER, 
+        client_id INTEGER,
+        username TEXT,  -- ADDED USERNAME FIELD
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
     # Orders
