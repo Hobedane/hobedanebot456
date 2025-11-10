@@ -1,18 +1,15 @@
-import os
-from dotenv import load_dotenv
+import logging
 
-load_dotenv()
+# Logging setup
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('ADMIN_IDS') else []
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///shop.db')
-EXCHANGE_RATE = float(os.getenv('EXCHANGE_RATE', 1.08))
+# Bot configuration
+BOT_TOKEN = "8366585450:AAGoY_-J7SQh7pMtlEYeQvXwVmXFUChrgdY"
+ADMIN_USER_ID = 7991318409
 
-# Default messages that can be customized via admin panel
-DEFAULT_MESSAGES = {
-    'welcome': "Welcome to our shop! 🛍️",
-    'success_payment': "✅ Payment confirmed! Your products have been delivered.",
-    'rules': "📋 Shop Rules:\n1. All sales are final\n2. No refunds\n3. Contact admin for issues",
-    'added_to_cart': "✅ Added to cart!",
-    'payment_instructions': "Please send exactly {amount} {currency} to:\n`{address}`\n\nAfter sending, click 'Paid' and enter your source address.",
-}
+# Exchange rate (manual)
+EXCHANGE_RATE_EUR_TO_USD = 1.16  # Default value, can be changed via admin
