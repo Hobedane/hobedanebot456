@@ -95,3 +95,112 @@ async def admin_add_product_start(update: Update, context: ContextTypes.DEFAULT_
         ]])
     )
     context.user_data['admin_mode'] = 'adding_product_name'
+
+async def handle_product_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_product_name':
+        product_name = update.message.text
+        context.user_data['new_product'] = {'name': product_name}
+        context.user_data['admin_mode'] = 'adding_product_price'
+        await update.message.reply_text(
+            f"✅ Name: {product_name}\n\n"
+            f"Enter product price (example: 25.00):",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+            ]])
+        )
+
+async def handle_product_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_product_price':
+        try:
+            price = float(update.message.text)
+            context.user_data['new_product']['price'] = price
+            context.user_data['admin_mode'] = 'adding_product_description'
+            await update.message.reply_text(
+                f"✅ Price: {price}€\n\n"
+                f"Enter product description:",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+                ]])
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Invalid price! Enter a number (example: 25.00):")
+
+async def handle_product_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_product_description':
+        description = update.message.text
+        context.user_data['new_product']['description'] = description
+        context.user_data['admin_mode'] = 'adding_product_quantity'
+        await update.message.reply_text(
+            f"✅ Description: {description}\n\n"
+            f"Enter product quantity (example: 5):",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+            ]])
+        )
+
+async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_product_quantity':
+        try:
+            quantity = int(update.message.text)
+            product_data = context.user_data['new_product']
+            
+            # Save product to database
+            conn = get_db_connection()
+            conn.execute('''INSERT INTO products (name, price, description, quantity, active) 
+                         VALUES (?, ?, ?, ?, ?)''', 
+                         (product_data['name'], product_data['price'], product_data['description'], quantity, 1))
+            product_id = conn.lastrowid
+            conn.commit()
+            conn.close()
+            
+            context.user_data['current_product_id'] = product_id
+            context.user_data['admin_mode'] = 'adding_product_image1'
+            
+            await update.message.reply_text(
+                f"✅ Quantity: {quantity}\n\n"
+                f"🎉 Product added!\n\n"
+                f"Now send the first product image:",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+                ]])
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Invalid quantity! Enter a whole number (example: 5):")
+
+async def handle_product_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_product_coordinates':
+        coordinates = update.message.text
+        if coordinates.lower() != 'skip':
+            product_id = context.user_data.get('current_product_id')
+            conn = get_db_connection()
+            conn.execute('UPDATE products SET map_coordinates = ? WHERE id = ?', (coordinates, product_id))
+            conn.commit()
+            conn.close()
+            message = f"📍 Coordinates saved: {coordinates}"
+        else:
+            message = "📍 No coordinates added."
+        
+        # Get final product info
+        product_id = context.user_data.get('current_product_id')
+        conn = get_db_connection()
+        product = conn.execute('SELECT * FROM products WHERE id = ?', (product_id,)).fetchone()
+        conn.close()
+        
+        images_count = sum(1 for img in [product['image_id'], product['image_id2']] if img)
+        
+        await update.message.reply_text(
+            f"🎉 Product added completely!\n{message}\n\n"
+            f"📦 {product['name']}\n"
+            f"💰 {product['price']}€\n"
+            f"🖼️ {images_count} image(s) attached\n\n"
+            f"Product is now available to clients.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📦 To Product Management", callback_data="admin_products"),
+                InlineKeyboardButton("🛠️ To Admin Panel", callback_data="admin_panel")
+            ]])
+        )
+        
+        # Reset state
+        context.user_data['admin_mode'] = None
+        context.user_data['current_product_id'] = None
+        context.user_data['new_product'] = None
