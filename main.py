@@ -1,107 +1,104 @@
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
-import config
-from database import init_db
+import logging
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+
+# Import configurations
+from config import BOT_TOKEN, logger
+from database import init_database
 
 # Import handlers
-from handlers.start import start, show_rules, show_about
-from handlers.products import show_products, view_product, add_to_cart
-from handlers.cart import show_cart, enter_discount_code, process_discount_code, clear_cart
-from handlers.payments import checkout, select_crypto, confirm_payment, enter_source_address, process_source_address
-from handlers.admin import admin_panel, admin_products, admin_crypto, admin_stats, admin_payments, confirm_order, final_confirm_order
-from handlers.discounts import admin_discounts, create_discount, process_discount_creation
-from handlers.content import admin_messages, edit_message, process_message_update
-from handlers.message_handler import admin_send_message, process_message_sending
+from handlers.start import start, back_to_main
+from handlers.products import show_products, show_product_detail, buy_now
+from handlers.cart import add_to_cart, view_cart, clear_cart, checkout_cart
+from handlers.payment import show_payment_options, show_payment_details, confirm_payment, handle_payment_source
+from handlers.admin import admin_panel, admin_exchange_rate, handle_exchange_rate_update
+from handlers.content import about_us, contact, website, rules, faq
+from handlers.discount import ask_discount_code, no_discount_code, proceed_to_payment, handle_discount_code_input
 
-# Conversation states
-WAITING_DISCOUNT_CODE, WAITING_SOURCE_ADDRESS, WAITING_MESSAGE_UPDATE, WAITING_MESSAGE_DETAILS, WAITING_DISCOUNT_DETAILS = range(5)
+# Unified message handler
+async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # Check for discount code waiting (KLIENDI POOLNE)
+    if context.user_data.get('waiting_discount_code'):
+        await handle_discount_code_input(update, context)
+        return
+    
+    # Check for payment source address waiting
+    if context.user_data.get('waiting_payment_source'):
+        await handle_payment_source(update, context)
+        return
+    
+    # Check admin modes
+    admin_mode = context.user_data.get('admin_mode')
+    if admin_mode == 'updating_exchange_rate':
+        await handle_exchange_rate_update(update, context)
+        return
+    
+    # If no specific handler, send to main menu
+    await start(update, context)
 
-async def main_menu(update: Update, context):
-    from utils.helpers import get_main_keyboard
-    await update.callback_query.edit_message_text(
-        "Main Menu",
-        reply_markup=get_main_keyboard()
-    )
+# Product image handler
+async def handle_product_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ühendatud pildihandler kõikidele piltidele"""
+    # This would handle product images - implementation depends on your specific needs
+    if update.message.photo:
+        await update.message.reply_text("✅ Image received!")
 
-def main():
+def main() -> None:
     # Initialize database
-    init_db()
+    init_database()
     
     # Create application
-    application = Application.builder().token(config.BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).build()
     
-    # Add handlers
+    # Command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_panel))
     
-    # Main menu callbacks
-    application.add_handler(CallbackQueryHandler(show_products, pattern="^products$"))
-    application.add_handler(CallbackQueryHandler(show_cart, pattern="^cart$"))
-    application.add_handler(CallbackQueryHandler(show_rules, pattern="^rules$"))
-    application.add_handler(CallbackQueryHandler(show_about, pattern="^about$"))
-    application.add_handler(CallbackQueryHandler(main_menu, pattern="^main_menu$"))
-    
-    # Products callbacks
-    application.add_handler(CallbackQueryHandler(view_product, pattern="^view_product_"))
-    application.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_cart_"))
-    
-    # Cart callbacks
-    application.add_handler(CallbackQueryHandler(checkout, pattern="^checkout$"))
-    application.add_handler(CallbackQueryHandler(enter_discount_code, pattern="^enter_discount$"))
+    # Callback handlers
+    application.add_handler(CallbackQueryHandler(show_products, pattern="^view_products$"))
+    application.add_handler(CallbackQueryHandler(show_product_detail, pattern="^product_"))
+    application.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_to_cart_"))
+    application.add_handler(CallbackQueryHandler(buy_now, pattern="^buy_now_"))
+    application.add_handler(CallbackQueryHandler(view_cart, pattern="^view_cart$"))
     application.add_handler(CallbackQueryHandler(clear_cart, pattern="^clear_cart$"))
+    application.add_handler(CallbackQueryHandler(checkout_cart, pattern="^checkout_cart$"))
+    application.add_handler(CallbackQueryHandler(show_payment_options, pattern="^show_payment_options$"))
+    application.add_handler(CallbackQueryHandler(show_payment_details, pattern="^payment_"))
+    application.add_handler(CallbackQueryHandler(confirm_payment, pattern="^confirm_payment$"))
     
-    # Payment callbacks
-    application.add_handler(CallbackQueryHandler(select_crypto, pattern="^select_crypto_"))
-    application.add_handler(CallbackQueryHandler(confirm_payment, pattern="^confirm_payment_"))
-    application.add_handler(CallbackQueryHandler(enter_source_address, pattern="^enter_source_"))
+    # Discount code handlers
+    application.add_handler(CallbackQueryHandler(no_discount_code, pattern="^no_discount_code$"))
+    application.add_handler(CallbackQueryHandler(proceed_to_payment, pattern="^proceed_to_payment$"))
     
-    # Admin callbacks
+    # Content pages handlers
+    application.add_handler(CallbackQueryHandler(about_us, pattern="^about_us$"))
+    application.add_handler(CallbackQueryHandler(contact, pattern="^contact$"))
+    application.add_handler(CallbackQueryHandler(website, pattern="^website$"))
+    application.add_handler(CallbackQueryHandler(rules, pattern="^rules$"))
+    application.add_handler(CallbackQueryHandler(faq, pattern="^faq$"))
+    
+    # Admin panel handlers
     application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
-    application.add_handler(CallbackQueryHandler(admin_products, pattern="^admin_products$"))
-    application.add_handler(CallbackQueryHandler(admin_crypto, pattern="^admin_crypto$"))
-    application.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$"))
-    application.add_handler(CallbackQueryHandler(admin_payments, pattern="^admin_payments$"))
-    application.add_handler(CallbackQueryHandler(admin_discounts, pattern="^admin_discounts$"))
-    application.add_handler(CallbackQueryHandler(admin_messages, pattern="^admin_messages$"))
-    application.add_handler(CallbackQueryHandler(admin_send_message, pattern="^admin_send_msg$"))
-    application.add_handler(CallbackQueryHandler(confirm_order, pattern="^confirm_order_"))
-    application.add_handler(CallbackQueryHandler(final_confirm_order, pattern="^final_confirm_"))
-    application.add_handler(CallbackQueryHandler(edit_message, pattern="^edit_message_"))
-    application.add_handler(CallbackQueryHandler(create_discount, pattern="^create_discount$"))
+    application.add_handler(CallbackQueryHandler(admin_exchange_rate, pattern="^admin_exchange_rate$"))
     
-    # Conversation handlers
-    conv_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(enter_discount_code, pattern="^enter_discount$"),
-            CallbackQueryHandler(enter_source_address, pattern="^enter_source_"),
-            CallbackQueryHandler(edit_message, pattern="^edit_message_"),
-            CallbackQueryHandler(admin_send_message, pattern="^admin_send_msg$"),
-            CallbackQueryHandler(create_discount, pattern="^create_discount$")
-        ],
-        states={
-            WAITING_DISCOUNT_CODE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, process_discount_code)
-            ],
-            WAITING_SOURCE_ADDRESS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, process_source_address)
-            ],
-            WAITING_MESSAGE_UPDATE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, process_message_update)
-            ],
-            WAITING_MESSAGE_DETAILS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, process_message_sending)
-            ],
-            WAITING_DISCOUNT_DETAILS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, process_discount_creation)
-            ],
-        },
-        fallbacks=[CallbackQueryHandler(main_menu, pattern="^main_menu$")]
-    )
-    application.add_handler(conv_handler)
+    # Back handler
+    application.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
     
-    # Start the bot
-    print("Bot started!")
+    # Unified text handler - PEAB OLEMA VIIMANE
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_all_messages
+    ))
+    
+    # Image handler
+    application.add_handler(MessageHandler(filters.PHOTO, handle_product_image))
+    
+    # Start bot
+    print("🚀 Bot starting...")
     application.run_polling()
+    print("✅ Bot is running!")
 
 if __name__ == "__main__":
     main()
