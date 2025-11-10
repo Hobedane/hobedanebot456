@@ -63,8 +63,8 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
         await handle_crypto_blockchain(update, context)
         return
     elif admin_mode == 'adding_client_discount_id':
-        from handlers.admin_discounts import handle_client_discount_id
-        await handle_client_discount_id(update, context)
+        from handlers.admin_discounts import handle_client_discount_identifier
+        await handle_client_discount_identifier(update, context)
         return
     elif admin_mode == 'adding_discount_code':
         from handlers.admin_discounts import handle_discount_code_input_admin
@@ -97,10 +97,6 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif admin_mode == 'adding_product_quantity':
         from handlers.admin_products import handle_product_quantity
         await handle_product_quantity(update, context)
-        return
-    elif admin_mode == 'adding_product_image2_choice':
-        from handlers.admin_products import handle_image2_choice
-        await handle_image2_choice(update, context)
         return
     elif admin_mode == 'adding_product_coordinates':
         from handlers.admin_products import handle_product_coordinates
@@ -172,7 +168,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     application.add_handler(CallbackQueryHandler(admin_exchange_rate, pattern="^admin_exchange_rate$"))
     
-    # Admin sub-menu handlers - NEED ON KRIITILISED!
+    # Admin sub-menu handlers
     application.add_handler(CallbackQueryHandler(admin_products, pattern="^admin_products$"))
     application.add_handler(CallbackQueryHandler(admin_payments, pattern="^admin_payments$"))
     application.add_handler(CallbackQueryHandler(admin_content, pattern="^admin_content$"))
