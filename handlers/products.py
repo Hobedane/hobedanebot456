@@ -1,73 +1,74 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import Session, Product, Cart
-from utils.helpers import format_price_eur, get_message
+from database import get_db_connection
+from utils.helpers import format_price_display
 
-async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    with Session() as session:
-        products = session.query(Product).filter_by(is_active=True).all()
+async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
     
-    if not products:
-        await update.callback_query.edit_message_text(
-            "No products available at the moment.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="main_menu")]])
-        )
-        return
-
+    conn = get_db_connection()
+    products = conn.execute('SELECT * FROM products WHERE active = 1 AND quantity > 0').fetchall()
+    conn.close()
+    
     keyboard = []
     for product in products:
-        keyboard.append([InlineKeyboardButton(
-            f"{product.name} - {format_price_eur(product.price_eur)}",
-            callback_data=f"view_product_{product.id}"
-        )])
+        button_text = f"{product['name']} - {format_price_display(product['price'])}"
+        if product['quantity'] > 1:
+            button_text += f" ({product['quantity']} pcs)"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"product_{product['id']}")])
     
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="main_menu")])
+    if not keyboard:
+        keyboard.append([InlineKeyboardButton("📦 Products out of stock", callback_data="empty")])
     
-    await update.callback_query.edit_message_text(
-        "🛍️ Available Products:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    keyboard.append([InlineKeyboardButton("🛒 View Cart", callback_data="view_cart")])
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text("🛍️ Our Products:", reply_markup=reply_markup)
 
-async def view_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    product_id = int(update.callback_query.data.split('_')[-1])
+async def show_product_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    product_id = query.data.split("_")[1]
     
-    with Session() as session:
-        product = session.query(Product).filter_by(id=product_id).first()
+    conn = get_db_connection()
+    product = conn.execute('SELECT * FROM products WHERE id = ?', (product_id,)).fetchone()
+    conn.close()
     
     if not product:
-        await update.callback_query.edit_message_text("Product not found.")
+        await query.edit_message_text("❌ Product not found!")
         return
-
-    text = f"""
-📦 {product.name}
-💶 Price: {format_price_eur(product.price_eur)}
-📝 Description: {product.description or 'No description'}
-🔄 Available: {product.quantity}
-    """
+    
+    context.user_data['selected_product'] = dict(product)
+    context.user_data['selected_product_id'] = product_id
     
     keyboard = [
-        [InlineKeyboardButton("🛒 Add to Cart", callback_data=f"add_cart_{product.id}")],
-        [InlineKeyboardButton("🔙 Back to Products", callback_data="products")]
+        [InlineKeyboardButton("💰 Buy Now", callback_data=f"buy_now_{product_id}")],
+        [InlineKeyboardButton("🛒 Add to Cart", callback_data=f"add_to_cart_{product_id}")],
+        [InlineKeyboardButton("🔙 Back to Products", callback_data="view_products")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
     ]
     
-    await update.callback_query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    quantity_text = f"📦 Available: {product['quantity']} pcs\n\n" if product['quantity'] > 1 else ""
+    message = f"🛍️ {product['name']}\n\n📝 {product['description']}\n💰 Price: {format_price_display(product['price'])}\n{quantity_text}"
+    
+    await query.edit_message_text(message, reply_markup=reply_markup)
 
-async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    product_id = int(update.callback_query.data.split('_')[-1])
-    user_id = update.effective_user.id
+async def buy_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    product_id = query.data.split("_")[2]
     
-    with Session() as session:
-        # Check if already in cart
-        existing = session.query(Cart).filter_by(user_id=user_id, product_id=product_id).first()
-        if existing:
-            existing.quantity += 1
-        else:
-            cart_item = Cart(user_id=user_id, product_id=product_id)
-            session.add(cart_item)
-        session.commit()
+    conn = get_db_connection()
+    product = conn.execute('SELECT * FROM products WHERE id = ?', (product_id,)).fetchone()
+    conn.close()
     
-    added_message = get_message('added_to_cart')
-    await update.callback_query.answer(added_message, show_alert=True)
+    context.user_data['selected_product'] = dict(product)
+    context.user_data['selected_product_id'] = product_id
+    
+    # Ask for discount code first
+    from handlers.discount import ask_discount_code
+    await ask_discount_code(update, context, from_cart=False)
