@@ -78,3 +78,19 @@ async def admin_edit_success_message(update: Update, context: ContextTypes.DEFAU
             InlineKeyboardButton("🔙 Back to Content Management", callback_data="admin_content")
         ]])
     )
+
+async def handle_content_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle content editing from admin"""
+    if 'editing_content' in context.user_data:
+        content_key = context.user_data['editing_content']
+        new_content = update.message.text
+        
+        conn = get_db_connection()
+        conn.execute('UPDATE content SET content = ? WHERE key = ?', (new_content, content_key))
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text("✅ Content updated!")
+        
+        # Clear editing state
+        del context.user_data['editing_content']
