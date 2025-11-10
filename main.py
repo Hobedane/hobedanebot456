@@ -14,6 +14,20 @@ from handlers.admin import admin_panel, admin_exchange_rate, handle_exchange_rat
 from handlers.content import about_us, contact, website, rules, faq
 from handlers.discount import ask_discount_code, no_discount_code, proceed_to_payment, handle_discount_code_input
 
+# Import admin handlers - NENDES FAILIDES ON ADMINI ALAMFUNKTSIOONID
+from handlers.admin_products import admin_products, admin_edit_product, admin_add_product_start
+from handlers.admin_payments import admin_payments, edit_payment_start, remove_payment_start, add_new_crypto
+from handlers.admin_content import admin_content, admin_edit_content_start, admin_edit_success_message
+from handlers.admin_discounts import admin_discounts, admin_add_client_discount, admin_add_general_discount, view_all_discounts
+from handlers.admin_stats import admin_stats
+
+# Import payment approval handlers
+from handlers.payment_approval import (
+    admin_approve_payment, admin_reject_payment, 
+    confirm_approve_payment, cancel_approve_payment,
+    confirm_reject_payment, cancel_reject_payment
+)
+
 # Unified message handler
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -41,7 +55,6 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
 # Product image handler
 async def handle_product_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Ühendatud pildihandler kõikidele piltidele"""
-    # This would handle product images - implementation depends on your specific needs
     if update.message.photo:
         await update.message.reply_text("✅ Image received!")
 
@@ -56,7 +69,9 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_panel))
     
-    # Callback handlers
+    # ========== KLIENDI HANDLERID ==========
+    
+    # Products and cart
     application.add_handler(CallbackQueryHandler(show_products, pattern="^view_products$"))
     application.add_handler(CallbackQueryHandler(show_product_detail, pattern="^product_"))
     application.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_to_cart_"))
@@ -64,11 +79,13 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(view_cart, pattern="^view_cart$"))
     application.add_handler(CallbackQueryHandler(clear_cart, pattern="^clear_cart$"))
     application.add_handler(CallbackQueryHandler(checkout_cart, pattern="^checkout_cart$"))
+    
+    # Payment process (KLIENDI poolne)
     application.add_handler(CallbackQueryHandler(show_payment_options, pattern="^show_payment_options$"))
     application.add_handler(CallbackQueryHandler(show_payment_details, pattern="^payment_"))
     application.add_handler(CallbackQueryHandler(confirm_payment, pattern="^confirm_payment$"))
     
-    # Discount code handlers
+    # Discount code handlers (KLIENDI poolne)
     application.add_handler(CallbackQueryHandler(no_discount_code, pattern="^no_discount_code$"))
     application.add_handler(CallbackQueryHandler(proceed_to_payment, pattern="^proceed_to_payment$"))
     
@@ -79,9 +96,49 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(rules, pattern="^rules$"))
     application.add_handler(CallbackQueryHandler(faq, pattern="^faq$"))
     
+    # ========== ADMINI HANDLERID ==========
+    
     # Admin panel handlers
     application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     application.add_handler(CallbackQueryHandler(admin_exchange_rate, pattern="^admin_exchange_rate$"))
+    
+    # Admin sub-menu handlers
+    application.add_handler(CallbackQueryHandler(admin_products, pattern="^admin_products$"))
+    application.add_handler(CallbackQueryHandler(admin_payments, pattern="^admin_payments$"))
+    application.add_handler(CallbackQueryHandler(admin_content, pattern="^admin_content$"))
+    application.add_handler(CallbackQueryHandler(admin_discounts, pattern="^admin_discounts$"))
+    application.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$"))
+    
+    # Admin content management
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_welcome_message$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_about_us$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_contact$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_website$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_rules$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_faq$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_success_message, pattern="^admin_edit_success_message$"))
+    
+    # Admin discount management
+    application.add_handler(CallbackQueryHandler(admin_add_client_discount, pattern="^add_client_discount$"))
+    application.add_handler(CallbackQueryHandler(admin_add_general_discount, pattern="^add_general_discount$"))
+    application.add_handler(CallbackQueryHandler(view_all_discounts, pattern="^view_all_discounts$"))
+    
+    # Admin payment management (MAKSEVIISIDE HALDUS)
+    application.add_handler(CallbackQueryHandler(edit_payment_start, pattern="^edit_payment_"))
+    application.add_handler(CallbackQueryHandler(remove_payment_start, pattern="^remove_payment_"))
+    application.add_handler(CallbackQueryHandler(add_new_crypto, pattern="^add_new_crypto$"))
+    
+    # Admin product management
+    application.add_handler(CallbackQueryHandler(admin_edit_product, pattern="^admin_edit_product_"))
+    application.add_handler(CallbackQueryHandler(admin_add_product_start, pattern="^admin_add_product$"))
+    
+    # Admin payment approval (MAKSE KINNITAMINE)
+    application.add_handler(CallbackQueryHandler(admin_approve_payment, pattern="^approve_"))
+    application.add_handler(CallbackQueryHandler(admin_reject_payment, pattern="^reject_"))
+    application.add_handler(CallbackQueryHandler(confirm_approve_payment, pattern="^confirm_approve_"))
+    application.add_handler(CallbackQueryHandler(cancel_approve_payment, pattern="^cancel_approve_"))
+    application.add_handler(CallbackQueryHandler(confirm_reject_payment, pattern="^confirm_reject_"))
+    application.add_handler(CallbackQueryHandler(cancel_reject_payment, pattern="^cancel_reject_"))
     
     # Back handler
     application.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
