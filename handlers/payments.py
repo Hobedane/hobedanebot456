@@ -1,200 +1,258 @@
+import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import Session, CryptoAddress, Order, Cart, Product, Statistics, DiscountCode
-from utils.helpers import get_message, format_price_eur, format_price_usd
-import config
+from database import get_db_connection, get_exchange_rate
+from utils.helpers import format_price_display, convert_eur_to_usd
+from config import ADMIN_USER_ID, logger
 
-async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+async def show_payment_options(update: Update, context: ContextTypes.DEFAULT_TYPE, from_cart=False) -> None:
+    query = update.callback_query
+    await query.answer()
     
-    with Session() as session:
-        # Calculate total
-        cart_items = session.query(Cart).filter_by(user_id=user_id).all()
-        total_eur = 0
-        product_ids = []
-        
-        for item in cart_items:
-            product = session.query(Product).filter_by(id=item.product_id).first()
-            if product:
-                total_eur += product.price_eur * item.quantity
-                product_ids.append(product.id)
-        
-        # Apply discount
-        discount_code = context.user_data.get('discount_code')
-        discount_percent = 0
-        if discount_code:
-            discount = session.query(DiscountCode).filter_by(code=discount_code).first()
-            if discount:
-                discount_percent = discount.discount_percent
-        
-        if discount_percent > 0:
-            total_eur = total_eur * (1 - discount_percent / 100)
-        
-        total_usd = total_eur * config.EXCHANGE_RATE
-        
-        # Get crypto addresses
-        crypto_addresses = session.query(CryptoAddress).filter_by(is_active=True).all()
-    
-    if not crypto_addresses:
-        await update.callback_query.edit_message_text(
-            "No payment methods available. Please contact admin.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="cart")]])
-        )
-        return
+    conn = get_db_connection()
+    payments = conn.execute('SELECT * FROM payment_settings').fetchall()
+    conn.close()
     
     keyboard = []
-    for crypto in crypto_addresses:
-        keyboard.append([InlineKeyboardButton(
-            crypto.currency,
-            callback_data=f"select_crypto_{crypto.id}_{total_eur:.2f}"
-        )])
+    for payment in payments:
+        name = {
+            'btc': '₿ Bitcoin',
+            'eth': 'Ξ Ethereum', 
+            'sol': '◎ Solana',
+            'ltc': '💎 Litecoin',
+            'usdt': '💵 USDT'
+        }.get(payment['crypto_type'], payment['crypto_type'].upper())
+        keyboard.append([InlineKeyboardButton(name, callback_data=f"payment_{payment['crypto_type']}")])
     
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="cart")])
-    
-    text = f"💰 Checkout\n\n"
-    text += f"💶 Total: {format_price_eur(total_eur)}\n"
-    text += f"💵 Total: {format_price_usd(total_eur)}\n\n"
-    text += "Select payment method:"
-    
-    await update.callback_query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    if from_cart:
+        # Use discounted total if available
+        total_eur = context.user_data.get('discounted_total') or context.user_data.get('cart_total', 0)
+        discount_code = context.user_data.get('discount_code')
+        discount_text = f"\n🎫 Discount: {discount_code}" if discount_code else ""
+        
+        await query.edit_message_text(
+            f"💰 Total: {format_price_display(total_eur)}{discount_text}\n\n"
+            f"Choose payment method:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        product = context.user_data.get('selected_product', {})
+        # Use discounted price if available
+        price_eur = context.user_data.get('discounted_price') or product['price']
+        discount_code = context.user_data.get('discount_code')
+        discount_text = f"\n🎫 Discount: {discount_code}" if discount_code else ""
+        
+        await query.edit_message_text(
+            f"💳 Choose payment method:\n\n"
+            f"🛍️ {product['name']}\n"
+            f"💰 Price: {format_price_display(price_eur)}{discount_text}",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
-async def select_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data_parts = update.callback_query.data.split('_')
-    crypto_id = int(data_parts[2])
-    total_eur = float(data_parts[3])
+async def show_payment_details(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    crypto_type = query.data.replace("payment_", "")
     
-    with Session() as session:
-        crypto = session.query(CryptoAddress).filter_by(id=crypto_id).first()
-        total_usd = total_eur * config.EXCHANGE_RATE
+    # Check if cart or single product
+    from_cart = 'cart_items' in context.user_data
     
-    if not crypto:
-        await update.callback_query.edit_message_text("Payment method not found.")
+    if from_cart:
+        cart_items = context.user_data['cart_items']
+        # Use discounted total if available
+        total_eur = context.user_data.get('discounted_total') or context.user_data.get('cart_total', 0)
+        products_text = "\n".join([f"• {item['name']} x {item['quantity']}" for item in cart_items])
+        message = f"🛍️ Order Contents:\n{products_text}\n💰 Total: {format_price_display(total_eur)}"
+    else:
+        product = context.user_data.get('selected_product', {})
+        # Use discounted price if available
+        price_eur = context.user_data.get('discounted_price') or product['price']
+        message = f"🛍️ Product: {product['name']}\n💰 Price: {format_price_display(price_eur)}"
+    
+    # Add discount info if available
+    discount_code = context.user_data.get('discount_code')
+    if discount_code:
+        message += f"\n🎫 Discount Code: {discount_code}"
+    
+    conn = get_db_connection()
+    payment = conn.execute('SELECT * FROM payment_settings WHERE crypto_type = ?', (crypto_type,)).fetchone()
+    conn.close()
+    
+    if not payment:
+        await query.edit_message_text("❌ Selected payment method not available!")
         return
     
-    payment_instructions = get_message('payment_instructions').format(
-        amount=total_eur,
-        currency=crypto.currency,
-        address=crypto.address
-    )
+    # Save payment info
+    context.user_data['payment_method'] = crypto_type
+    context.user_data['payment_address'] = payment['address']
     
-    text = f"💰 Payment Instructions\n\n{payment_instructions}\n\n"
-    text += f"💶 Amount EUR: {format_price_eur(total_eur)}\n"
-    text += f"💵 Amount USD: {format_price_usd(total_eur)}"
+    total_amount = total_eur if from_cart else price_eur
     
-    keyboard = [
-        [InlineKeyboardButton("✅ I Have Paid", callback_data=f"confirm_payment_{crypto_id}_{total_eur:.2f}")],
-        [InlineKeyboardButton("🔙 Back", callback_data="checkout")]
-    ]
-    
-    await update.callback_query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
-
-async def confirm_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data_parts = update.callback_query.data.split('_')
-    crypto_id = int(data_parts[2])
-    total_eur = float(data_parts[3])
-    
-    keyboard = [
-        [InlineKeyboardButton("✅ Yes, I have paid", callback_data=f"enter_source_{crypto_id}_{total_eur:.2f}")],
-        [InlineKeyboardButton("🔙 Back", callback_data=f"select_crypto_{crypto_id}_{total_eur:.2f}")]
-    ]
-    
-    await update.callback_query.edit_message_text(
-        "⚠️ Are you sure you have made the payment?\n\n"
-        "Please confirm only after you have sent the cryptocurrency.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        f"💳 PAYMENT DETAILS\n\n"
+        f"{message}\n"
+        f"⛓️ Blockchain: {payment['blockchain']}\n\n"
+        f"📧 SEND PAYMENT TO ADDRESS:\n"
+        f"{payment['address']}\n\n"
+        f"⚠️ IMPORTANT:\n"
+        f"• Send exactly {format_price_display(total_amount)} worth of {crypto_type.upper()}\n"
+        f"• Copy address exactly\n\n"
+        f"After payment, click the button below:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ PAYMENT MADE", callback_data="confirm_payment")
+        ], [
+            InlineKeyboardButton("🔙 Back to Payment Methods", callback_data="show_payment_options")
+        ]])
     )
 
-async def enter_source_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data_parts = update.callback_query.data.split('_')
-    crypto_id = int(data_parts[2])
-    total_eur = float(data_parts[3])
+async def confirm_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
     
-    context.user_data['pending_payment'] = {
-        'crypto_id': crypto_id,
-        'total_eur': total_eur
-    }
-    
-    await update.callback_query.edit_message_text(
-        "Please enter the source address (the address you sent the payment FROM):",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancel", callback_data="cart")]])
+    await query.edit_message_text(
+        "🔍 PAYMENT CONFIRMATION\n\n"
+        "Please enter the payment source address (where you sent from):\n\n"
+        "⚠️ IMPORTANT: This helps us identify your payment and link it to your order!\n\n"
+        "Example: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Back", callback_data="show_payment_options")
+        ]])
     )
-    return 'WAITING_SOURCE_ADDRESS'
+    context.user_data['waiting_payment_source'] = True
 
-async def process_source_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    source_address = update.message.text
-    user_id = update.effective_user.id
-    payment_data = context.user_data.get('pending_payment')
-    
-    if not payment_data:
-        await update.message.reply_text("Payment session expired. Please start over.")
-        return -1
-    
-    with Session() as session:
-        # Get cart items
-        cart_items = session.query(Cart).filter_by(user_id=user_id).all()
-        product_ids = [item.product_id for item in cart_items]
+async def handle_payment_source(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('waiting_payment_source'):
+        payment_source = update.message.text
+        # Save payment source address
+        context.user_data['payment_source'] = payment_source
+        context.user_data['waiting_payment_source'] = False
         
-        # Create order
-        crypto = session.query(CryptoAddress).filter_by(id=payment_data['crypto_id']).first()
-        order = Order(
-            user_id=user_id,
-            total_eur=payment_data['total_eur'],
-            total_usd=payment_data['total_eur'] * config.EXCHANGE_RATE,
-            currency=crypto.currency,
-            crypto_address=crypto.address,
-            source_address=source_address,
-            products=product_ids,
-            status='pending'
-        )
-        session.add(order)
+        # Continue with payment confirmation
+        await process_payment_confirmation(update, context)
+
+async def process_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    payment_source = context.user_data.get('payment_source', 'Not specified')
+    discount_code = context.user_data.get('discount_code')
+    
+    # Check if cart or single product
+    from_cart = 'cart_items' in context.user_data
+    
+    if from_cart:
+        # Cart payment
+        cart_items = context.user_data['cart_items']
+        # Use discounted total if available
+        total_eur = context.user_data.get('discounted_total') or context.user_data.get('cart_total', 0)
+        
+        # Create orders for each product
+        order_ids = []
+        for item in cart_items:
+            order_id = f"ORD{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}{item['id']}"
+            order_ids.append(order_id)
+            
+            conn = get_db_connection()
+            conn.execute('''INSERT INTO orders (order_id, client_id, product_id, status, final_price, payment_source_address, discount_code) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?)''', 
+                         (order_id, user.id, item['id'], 'pending', total_eur, payment_source, discount_code))
+            conn.commit()
+            conn.close()
         
         # Clear cart
-        session.query(Cart).filter_by(user_id=user_id).delete()
+        conn = get_db_connection()
+        conn.execute('DELETE FROM cart WHERE user_id = ?', (user.id,))
+        conn.commit()
+        conn.close()
         
-        # Mark discount code as used if applicable
-        discount_code = context.user_data.get('discount_code')
+        order_id_text = ", ".join(order_ids)
+        discount_text = f"\n🎫 Discount Code: {discount_code}" if discount_code else ""
+        
+        await update.message.reply_text(
+            f"✅ Notified admin of your payment!\n"
+            f"🆔 Order IDs: {order_id_text}\n"
+            f"💰 Total: {format_price_display(total_eur)}{discount_text}\n"
+            f"📧 Payment source address: {payment_source}\n\n"
+            f"Admin will check your transaction and send products after confirmation."
+        )
+        
+        # SEND MESSAGE TO ADMIN
+        user_info = f"{user.first_name} {user.last_name or ''} (@{user.username or 'none'})"
+        products_text = "\n".join([f"• {item['name']} x {item['quantity']}" for item in cart_items])
+        admin_message = (
+            f"🔄 CART PAYMENT AWAITING CONFIRMATION!\n\n"
+            f"👤 Client: {user_info}\n"
+            f"🆔 User ID: {user.id}\n"
+            f"🛍️ Products:\n{products_text}\n"
+            f"💰 Total: {format_price_display(total_eur)}\n"
+            f"🆔 Order IDs: {order_id_text}\n"
+            f"⛓️ Crypto: {context.user_data.get('payment_method', '').upper()}\n"
+            f"📧 Payment source address: {payment_source}\n"
+        )
         if discount_code:
-            discount = session.query(DiscountCode).filter_by(code=discount_code).first()
-            if discount:
-                discount.used = True
+            admin_message += f"🎫 Discount Code: {discount_code}\n"
+        admin_message += f"⏰ Time: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+        admin_message += f"Is payment visible in your wallet?"
         
-        session.commit()
-        order_id = order.id
+    else:
+        # Single product payment
+        product = context.user_data.get('selected_product', {})
+        # Use discounted price if available
+        price_eur = context.user_data.get('discounted_price') or product['price']
+        discount_code = context.user_data.get('discount_code')
+        
+        # Create order ID
+        order_id = f"ORD{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        # Save order
+        conn = get_db_connection()
+        conn.execute('''INSERT INTO orders (order_id, client_id, product_id, status, final_price, payment_source_address, discount_code) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?)''', 
+                     (order_id, user.id, product['id'], 'pending', price_eur, payment_source, discount_code))
+        conn.commit()
+        conn.close()
+        
+        discount_text = f"\n🎫 Discount Code: {discount_code}" if discount_code else ""
+        
+        await update.message.reply_text(
+            f"✅ Notified admin of your payment!\n"
+            f"🆔 Your Order ID: {order_id}\n"
+            f"💰 Price: {format_price_display(price_eur)}{discount_text}\n"
+            f"📧 Payment source address: {payment_source}\n\n"
+            f"Admin will check your transaction and send product after confirmation."
+        )
+        
+        # SEND MESSAGE TO ADMIN
+        user_info = f"{user.first_name} {user.last_name or ''} (@{user.username or 'none'})"
+        admin_message = (
+            f"🔄 PAYMENT AWAITING CONFIRMATION!\n\n"
+            f"👤 Client: {user_info}\n"
+            f"🆔 User ID: {user.id}\n"
+            f"🛍️ Product: {product['name']}\n"
+            f"💰 Price: {format_price_display(price_eur)}\n"
+            f"🆔 Order ID: {order_id}\n"
+            f"⛓️ Crypto: {context.user_data.get('payment_method', '').upper()}\n"
+            f"📧 Payment source address: {payment_source}\n"
+        )
+        if discount_code:
+            admin_message += f"🎫 Discount Code: {discount_code}\n"
+        admin_message += f"⏰ Time: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+        admin_message += f"Is payment visible in your wallet?"
     
-    # Notify admin
-    from main import application
-    for admin_id in config.ADMIN_IDS:
-        try:
-            await application.bot.send_message(
-                admin_id,
-                f"🆕 New Payment Pending!\n\n"
-                f"Order ID: #{order_id}\n"
-                f"User: @{update.effective_user.username or 'N/A'} ({user_id})\n"
-                f"Amount: {format_price_eur(payment_data['total_eur'])}\n"
-                f"Currency: {crypto.currency}\n"
-                f"Source Address: `{source_address}`\n\n"
-                f"Check your wallet and confirm payment.",
-                parse_mode='Markdown'
-            )
-        except Exception as e:
-            print(f"Failed to notify admin {admin_id}: {e}")
+    admin_keyboard = [
+        [
+            InlineKeyboardButton("✅ Confirm Payment", callback_data=f"approve_{order_id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"reject_{order_id}")
+        ]
+    ]
+    admin_reply_markup = InlineKeyboardMarkup(admin_keyboard)
     
-    await update.message.reply_text(
-        "✅ Payment registered! Admin will verify your payment and send your products soon.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛍️ Continue Shopping", callback_data="products")]])
+    await context.bot.send_message(
+        chat_id=ADMIN_USER_ID,
+        text=admin_message,
+        reply_markup=admin_reply_markup
     )
     
-    # Clear temporary data
-    if 'pending_payment' in context.user_data:
-        del context.user_data['pending_payment']
-    if 'discount_code' in context.user_data:
-        del context.user_data['discount_code']
-    
-    return -1
+    # Clear user data
+    context.user_data.clear()
+
+# Payment approval functions would continue here...
