@@ -1,4 +1,5 @@
 import logging
+from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # Import configurations
@@ -14,14 +15,14 @@ from handlers.admin import admin_panel, admin_exchange_rate, handle_exchange_rat
 from handlers.content import about_us, contact, website, rules, faq
 from handlers.discount import ask_discount_code, no_discount_code, proceed_to_payment, handle_discount_code_input
 
-# Import admin handlers - NENDES FAILIDES ON ADMINI ALAMFUNKTSIOONID
+# Import admin sub-handlers
 from handlers.admin_products import admin_products, admin_edit_product, admin_add_product_start
 from handlers.admin_payments import admin_payments, edit_payment_start, remove_payment_start, add_new_crypto
 from handlers.admin_content import admin_content, admin_edit_content_start, admin_edit_success_message
 from handlers.admin_discounts import admin_discounts, admin_add_client_discount, admin_add_general_discount, view_all_discounts
 from handlers.admin_stats import admin_stats
 
-# Import payment approval handlers
+# Import payment approval
 from handlers.payment_approval import (
     admin_approve_payment, admin_reject_payment, 
     confirm_approve_payment, cancel_approve_payment,
@@ -45,8 +46,77 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Check admin modes
     admin_mode = context.user_data.get('admin_mode')
+    
     if admin_mode == 'updating_exchange_rate':
         await handle_exchange_rate_update(update, context)
+        return
+    elif admin_mode == 'adding_crypto_type':
+        from handlers.admin_payments import handle_crypto_type
+        await handle_crypto_type(update, context)
+        return
+    elif admin_mode == 'adding_crypto_address':
+        from handlers.admin_payments import handle_crypto_address
+        await handle_crypto_address(update, context)
+        return
+    elif admin_mode == 'adding_crypto_blockchain':
+        from handlers.admin_payments import handle_crypto_blockchain
+        await handle_crypto_blockchain(update, context)
+        return
+    elif admin_mode == 'adding_client_discount_id':
+        from handlers.admin_discounts import handle_client_discount_id
+        await handle_client_discount_id(update, context)
+        return
+    elif admin_mode == 'adding_discount_code':
+        from handlers.admin_discounts import handle_discount_code_input_admin
+        await handle_discount_code_input_admin(update, context)
+        return
+    elif admin_mode == 'adding_discount_percent':
+        from handlers.admin_discounts import handle_discount_percent
+        await handle_discount_percent(update, context)
+        return
+    elif admin_mode == 'adding_discount_expiry':
+        from handlers.admin_discounts import handle_discount_expiry
+        await handle_discount_expiry(update, context)
+        return
+    elif admin_mode == 'adding_discount_max_uses':
+        from handlers.admin_discounts import handle_discount_max_uses
+        await handle_discount_max_uses(update, context)
+        return
+    elif admin_mode == 'adding_product_name':
+        from handlers.admin_products import handle_product_name
+        await handle_product_name(update, context)
+        return
+    elif admin_mode == 'adding_product_price':
+        from handlers.admin_products import handle_product_price
+        await handle_product_price(update, context)
+        return
+    elif admin_mode == 'adding_product_description':
+        from handlers.admin_products import handle_product_description
+        await handle_product_description(update, context)
+        return
+    elif admin_mode == 'adding_product_quantity':
+        from handlers.admin_products import handle_product_quantity
+        await handle_product_quantity(update, context)
+        return
+    elif admin_mode == 'adding_product_image2_choice':
+        from handlers.admin_products import handle_image2_choice
+        await handle_image2_choice(update, context)
+        return
+    elif admin_mode == 'adding_product_coordinates':
+        from handlers.admin_products import handle_product_coordinates
+        await handle_product_coordinates(update, context)
+        return
+    
+    # Check content editing
+    if 'editing_content' in context.user_data:
+        from handlers.admin_content import handle_content_edit
+        await handle_content_edit(update, context)
+        return
+    
+    # Check payment editing
+    if 'editing_payment' in context.user_data:
+        from handlers.admin_payments import handle_payment_edit
+        await handle_payment_edit(update, context)
         return
     
     # If no specific handler, send to main menu
@@ -102,7 +172,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     application.add_handler(CallbackQueryHandler(admin_exchange_rate, pattern="^admin_exchange_rate$"))
     
-    # Admin sub-menu handlers
+    # Admin sub-menu handlers - NEED ON KRIITILISED!
     application.add_handler(CallbackQueryHandler(admin_products, pattern="^admin_products$"))
     application.add_handler(CallbackQueryHandler(admin_payments, pattern="^admin_payments$"))
     application.add_handler(CallbackQueryHandler(admin_content, pattern="^admin_content$"))
@@ -139,6 +209,9 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(cancel_approve_payment, pattern="^cancel_approve_"))
     application.add_handler(CallbackQueryHandler(confirm_reject_payment, pattern="^confirm_reject_"))
     application.add_handler(CallbackQueryHandler(cancel_reject_payment, pattern="^cancel_reject_"))
+    
+    # Payment removal confirmation
+    application.add_handler(CallbackQueryHandler(confirm_remove_payment, pattern="^confirm_remove_"))
     
     # Back handler
     application.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
