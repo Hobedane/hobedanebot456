@@ -32,7 +32,11 @@ async def admin_add_client_discount(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     
     await query.edit_message_text(
-        "Enter client ID:",
+        "👤 Add Client-Specific Discount\n\n"
+        "Enter client ID OR @username (without @):\n\n"
+        "📝 Examples:\n"
+        "• 123456789 (User ID)\n"
+        "• johndoe (Username without @)",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
         ]])
@@ -77,7 +81,18 @@ async def view_all_discounts(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if discount['is_general']:
             message += f"🌍 General code: {discount['code']}\n"
         else:
+            client_info = ""
+            if discount['client_id']:
+                client_info = f"👤 User ID: {discount['client_id']}"
+            if discount['username']:
+                client_info = f"👤 Username: @{discount['username']}"
+            if discount['client_id'] and discount['username']:
+                client_info = f"👤 User ID: {discount['client_id']} (@{discount['username']})"
+                
             message += f"👤 Client code: {discount['code']}\n"
+            if client_info:
+                message += f"{client_info}\n"
+        
         message += f"📊 Discount: {discount['discount_percent']}%\n"
         message += f"📅 Valid until: {discount['expires']}\n"
         if discount['is_general']:
@@ -93,21 +108,42 @@ async def view_all_discounts(update: Update, context: ContextTypes.DEFAULT_TYPE)
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="Markdown")
 
-async def handle_client_discount_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_client_discount_identifier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle both user ID and username input for client discounts"""
     if context.user_data.get('admin_mode') == 'adding_client_discount_id':
-        try:
-            client_id = int(update.message.text)
-            context.user_data['new_discount'] = {'client_id': client_id, 'is_general': False}
-            context.user_data['admin_mode'] = 'adding_discount_code'
-            await update.message.reply_text(
-                f"✅ Client ID: {client_id}\n\n"
-                f"Enter discount code:",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
-                ]])
-            )
-        except ValueError:
-            await update.message.reply_text("❌ Invalid ID! Enter a number:")
+        identifier = update.message.text
+        
+        # Check if identifier is numeric (user ID) or string (username)
+        client_id = None
+        username = None
+        
+        if identifier.isdigit():
+            # It's a user ID
+            client_id = int(identifier)
+        else:
+            # It's a username
+            username = identifier.lower()
+            # Remove @ if user included it
+            if username.startswith('@'):
+                username = username[1:]
+        
+        # Save both ID and username for reference
+        context.user_data['new_discount'] = {
+            'client_id': client_id,
+            'username': username,
+            'is_general': False
+        }
+        
+        context.user_data['admin_mode'] = 'adding_discount_code'
+        
+        identifier_text = f"User ID: {client_id}" if client_id else f"Username: @{username}"
+        await update.message.reply_text(
+            f"✅ Client identified: {identifier_text}\n\n"
+            f"Enter discount code:",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
+            ]])
+        )
 
 async def handle_discount_code_input_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('admin_mode') == 'adding_discount_code':
@@ -153,14 +189,14 @@ async def handle_discount_expiry(update: Update, context: ContextTypes.DEFAULT_T
             )
         else:
             conn = get_db_connection()
-            conn.execute('''INSERT INTO discount_codes (code, discount_percent, expires, is_general, client_id) 
-                         VALUES (?, ?, ?, ?, ?)''', 
-                         (discount_data['code'], discount_data['percent'], expiry, 0, discount_data['client_id']))
+            conn.execute('''INSERT INTO discount_codes (code, discount_percent, expires, is_general, client_id, username) 
+                         VALUES (?, ?, ?, ?, ?, ?)''', 
+                         (discount_data['code'], discount_data['percent'], expiry, 0, discount_data['client_id'], discount_data['username']))
             conn.commit()
             conn.close()
             await update.message.reply_text(
                 f"✅ Client-specific discount code added!\n"
-                f"👤 Client ID: {discount_data['client_id']}\n"
+                f"👤 Client: {discount_data['client_id'] if discount_data['client_id'] else '@' + discount_data['username']}\n"
                 f"🎫 Code: {discount_data['code']}\n"
                 f"📊 Discount: {discount_data['percent']}%\n"
                 f"📅 Valid until: {expiry}"
