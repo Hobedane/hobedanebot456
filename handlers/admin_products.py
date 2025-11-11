@@ -167,6 +167,33 @@ async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_
         except ValueError:
             await update.message.reply_text("❌ Invalid quantity! Enter a whole number (example: 5):")
 
+# LISA NEED UUED FUNKTSIOONID
+async def handle_image2_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_product_image2_choice':
+        text = update.message.text.lower()
+        if text in ['yes', 'y', 'jah', 'ja']:
+            context.user_data['admin_mode'] = 'adding_product_image2'
+            await update.message.reply_text(
+                "Please send the second product image:",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+                ]])
+            )
+        elif text in ['no', 'n', 'ei']:
+            context.user_data['admin_mode'] = 'adding_product_coordinates'
+            await update.message.reply_text(
+                "No second image added.\n\n"
+                "Now you can add map coordinates (optional).\n"
+                "Enter coordinates in format:\n"
+                "59.4370, 24.7536\n\n"
+                "Or send 'skip' to skip.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+                ]])
+            )
+        else:
+            await update.message.reply_text("Please send 'yes' to add second image or 'no' to skip:")
+
 async def handle_product_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('admin_mode') == 'adding_product_coordinates':
         coordinates = update.message.text
