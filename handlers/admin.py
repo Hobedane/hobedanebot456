@@ -35,7 +35,7 @@ async def admin_exchange_rate(update: Update, context: CallbackContext) -> None:
     
     await query.edit_message_text(
         f"💱 Current Exchange Rate: 1 EUR = {current_rate} USD\n\n"
-        "Set new exchange rate:",
+        "Click 'Set Exchange Rate' to update:",
         reply_markup=reply_markup
     )
 
@@ -43,8 +43,13 @@ async def set_exchange_rate(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     
+    # Clear any previous state
+    context.user_data.pop('waiting_for_exchange_rate', None)
+    
     await query.edit_message_text(
-        "Please enter the new exchange rate (e.g., 1.10 for 1 EUR = 1.10 USD):"
+        "Please enter the new exchange rate:\n\n"
+        "Example: 1.10 for 1 EUR = 1.10 USD\n"
+        "Example: 0.95 for 1 EUR = 0.95 USD"
     )
     context.user_data['waiting_for_exchange_rate'] = True
 
@@ -52,7 +57,10 @@ async def handle_exchange_rate_input(update: Update, context: CallbackContext) -
     if context.user_data.get('waiting_for_exchange_rate'):
         try:
             rate_text = update.message.text.strip()
+            # Replace comma with dot for European format
+            rate_text = rate_text.replace(',', '.')
             rate = float(rate_text)
+            
             if rate <= 0:
                 await update.message.reply_text("❌ Please enter a positive number. Try again:")
                 return
@@ -64,14 +72,18 @@ async def handle_exchange_rate_input(update: Update, context: CallbackContext) -
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.message.reply_text(
-                f"✅ Exchange rate updated to: 1 EUR = {rate} USD",
+                f"✅ Exchange rate updated successfully!\n"
+                f"New rate: 1 EUR = {rate} USD",
                 reply_markup=reply_markup
             )
         except ValueError:
-            await update.message.reply_text("❌ Invalid number. Please enter a valid exchange rate (e.g., 1.10):")
+            await update.message.reply_text(
+                "❌ Invalid number format. Please enter a valid exchange rate:\n\n"
+                "Example: 1.10 or 0.95"
+            )
     else:
-        # If not waiting for exchange rate, check if it's a general message
-        await update.message.reply_text("Please use the menu to interact with the bot.")
+        # If not waiting for exchange rate, ignore the message
+        pass
 
 async def admin_stats(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
