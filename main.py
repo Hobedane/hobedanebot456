@@ -29,22 +29,34 @@ from handlers.payment_approval import (
     confirm_reject_payment, cancel_reject_payment
 )
 
-# Unified message handler
+# Unified message handler - PARANDATUD LOOGIKA
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     text = update.message.text
     
-    # Check for discount code waiting (KLIENDI POOLNE)
+    # KÕIGEPEALT kontrolli content editing - SEE ON OLULINE!
+    if 'editing_content' in context.user_data:
+        from handlers.admin_content import handle_content_edit
+        await handle_content_edit(update, context)
+        return
+    
+    # Siis kontrolli payment editing
+    if 'editing_payment' in context.user_data:
+        from handlers.admin_payments import handle_payment_edit
+        await handle_payment_edit(update, context)
+        return
+    
+    # Siis kontrolli discount code waiting (KLIENDI POOLNE)
     if context.user_data.get('waiting_discount_code'):
         await handle_discount_code_input(update, context)
         return
     
-    # Check for payment source address waiting
+    # Siis kontrolli payment source address waiting
     if context.user_data.get('waiting_payment_source'):
         await handle_payment_source(update, context)
         return
     
-    # Check admin modes
+    # ALLES NÜÜD kontrolli admin mode'e - SEE ON PARANDUS!
     admin_mode = context.user_data.get('admin_mode')
     
     if admin_mode == 'updating_exchange_rate':
@@ -101,18 +113,6 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif admin_mode == 'adding_product_coordinates':
         from handlers.admin_products import handle_product_coordinates
         await handle_product_coordinates(update, context)
-        return
-    
-    # Check content editing
-    if 'editing_content' in context.user_data:
-        from handlers.admin_content import handle_content_edit
-        await handle_content_edit(update, context)
-        return
-    
-    # Check payment editing
-    if 'editing_payment' in context.user_data:
-        from handlers.admin_payments import handle_payment_edit
-        await handle_payment_edit(update, context)
         return
     
     # If no specific handler, send to main menu
