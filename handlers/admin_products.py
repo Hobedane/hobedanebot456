@@ -139,9 +139,14 @@ async def handle_product_description(update: Update, context: ContextTypes.DEFAU
         )
 
 async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Kriitiline parandus - quantity handler"""
     if context.user_data.get('admin_mode') == 'adding_product_quantity':
         try:
             quantity = int(update.message.text)
+            if quantity < 0:
+                await update.message.reply_text("❌ Quantity cannot be negative! Enter a positive number:")
+                return
+                
             product_data = context.user_data['new_product']
             
             # Save product to database
@@ -153,24 +158,61 @@ async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_
             conn.commit()
             conn.close()
             
+            # Clear the previous admin_mode to avoid conflicts
+            context.user_data['admin_mode'] = None
+            
+            # Set new admin_mode for image handling
             context.user_data['current_product_id'] = product_id
             context.user_data['admin_mode'] = 'adding_product_image1'
             
             await update.message.reply_text(
                 f"✅ Quantity: {quantity}\n\n"
-                f"🎉 Product added!\n\n"
+                f"🎉 Product added to database!\n\n"
                 f"Now send the first product image:",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
                 ]])
             )
+            
         except ValueError:
             await update.message.reply_text("❌ Invalid quantity! Enter a whole number (example: 5):")
 
-# LISA NEED UUED FUNKTSIOONID
+async def handle_product_image1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Esimese pildi lisamine tootele"""
+    if context.user_data.get('admin_mode') == 'adding_product_image1' and update.message.photo:
+        product_id = context.user_data.get('current_product_id')
+        if not product_id:
+            await update.message.reply_text("❌ Error: Product ID not found. Please start over.")
+            return
+            
+        photo_id = update.message.photo[-1].file_id
+        conn = get_db_connection()
+        conn.execute('UPDATE products SET image_id = ? WHERE id = ?', (photo_id, product_id))
+        conn.commit()
+        conn.close()
+        
+        # Clear previous admin_mode
+        context.user_data['admin_mode'] = None
+        # Set new mode for image choice
+        context.user_data['admin_mode'] = 'adding_product_image2_choice'
+        
+        await update.message.reply_text(
+            "✅ First image saved!\n\n"
+            "Would you like to add a second image?\n"
+            "Send 'yes' to add second image or 'no' to skip:",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+            ]])
+        )
+
 async def handle_image2_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Teise pildi küsimise handler"""
     if context.user_data.get('admin_mode') == 'adding_product_image2_choice':
         text = update.message.text.lower()
+        
+        # Clear previous admin_mode
+        context.user_data['admin_mode'] = None
+        
         if text in ['yes', 'y', 'jah', 'ja']:
             context.user_data['admin_mode'] = 'adding_product_image2'
             await update.message.reply_text(
@@ -186,48 +228,105 @@ async def handle_image2_choice(update: Update, context: ContextTypes.DEFAULT_TYP
                 "Now you can add map coordinates (optional).\n"
                 "Enter coordinates in format:\n"
                 "59.4370, 24.7536\n\n"
-                "Or send 'skip' to skip.",
+                "Or send 'skip' to skip:",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
                 ]])
             )
         else:
-            await update.message.reply_text("Please send 'yes' to add second image or 'no' to skip:")
+            await update.message.reply_text("❌ Please send 'yes' to add second image or 'no' to skip:")
+
+async def handle_product_image2(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Teise pildi lisamine tootele"""
+    if context.user_data.get('admin_mode') == 'adding_product_image2' and update.message.photo:
+        product_id = context.user_data.get('current_product_id')
+        if not product_id:
+            await update.message.reply_text("❌ Error: Product ID not found. Please start over.")
+            return
+            
+        photo_id = update.message.photo[-1].file_id
+        conn = get_db_connection()
+        conn.execute('UPDATE products SET image_id2 = ? WHERE id = ?', (photo_id, product_id))
+        conn.commit()
+        conn.close()
+        
+        # Clear previous admin_mode
+        context.user_data['admin_mode'] = None
+        # Set new mode for coordinates
+        context.user_data['admin_mode'] = 'adding_product_coordinates'
+        
+        await update.message.reply_text(
+            "✅ Second image saved!\n\n"
+            "Now you can add map coordinates (optional).\n"
+            "Enter coordinates in format:\n"
+            "59.4370, 24.7536\n\n"
+            "Or send 'skip' to skip:",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
+            ]])
+        )
 
 async def handle_product_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Koordinaatide lisamine tootele"""
     if context.user_data.get('admin_mode') == 'adding_product_coordinates':
         coordinates = update.message.text
+        
+        # Clear admin_mode immediately to prevent conflicts
+        context.user_data['admin_mode'] = None
+        
         if coordinates.lower() != 'skip':
             product_id = context.user_data.get('current_product_id')
-            conn = get_db_connection()
-            conn.execute('UPDATE products SET map_coordinates = ? WHERE id = ?', (coordinates, product_id))
-            conn.commit()
-            conn.close()
-            message = f"📍 Coordinates saved: {coordinates}"
+            if product_id:
+                conn = get_db_connection()
+                conn.execute('UPDATE products SET map_coordinates = ? WHERE id = ?', (coordinates, product_id))
+                conn.commit()
+                conn.close()
+                message = f"📍 Coordinates saved: {coordinates}"
+            else:
+                message = "❌ Error: Product ID not found."
         else:
             message = "📍 No coordinates added."
         
         # Get final product info
         product_id = context.user_data.get('current_product_id')
-        conn = get_db_connection()
-        product = conn.execute('SELECT * FROM products WHERE id = ?', (product_id,)).fetchone()
-        conn.close()
-        
-        images_count = sum(1 for img in [product['image_id'], product['image_id2']] if img)
-        
-        await update.message.reply_text(
-            f"🎉 Product added completely!\n{message}\n\n"
-            f"📦 {product['name']}\n"
-            f"💰 {product['price']}€\n"
-            f"🖼️ {images_count} image(s) attached\n\n"
-            f"Product is now available to clients.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("📦 To Product Management", callback_data="admin_products"),
-                InlineKeyboardButton("🛠️ To Admin Panel", callback_data="admin_panel")
-            ]])
-        )
+        if product_id:
+            conn = get_db_connection()
+            product = conn.execute('SELECT * FROM products WHERE id = ?', (product_id,)).fetchone()
+            conn.close()
+            
+            if product:
+                images_count = sum(1 for img in [product['image_id'], product['image_id2']] if img and img != 'None')
+                
+                await update.message.reply_text(
+                    f"🎉 Product added completely!\n{message}\n\n"
+                    f"📦 {product['name']}\n"
+                    f"💰 {product['price']}€\n"
+                    f"📦 Quantity: {product['quantity']}\n"
+                    f"🖼️ {images_count} image(s) attached\n\n"
+                    f"Product is now available to clients.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("📦 To Product Management", callback_data="admin_products"),
+                        InlineKeyboardButton("🛠️ To Admin Panel", callback_data="admin_panel")
+                    ]])
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Error: Could not retrieve product information.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("📦 To Product Management", callback_data="admin_products")
+                    ]])
+                )
+        else:
+            await update.message.reply_text(
+                "❌ Error: Product ID not found.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📦 To Product Management", callback_data="admin_products")
+                ]])
+            )
         
         # Reset state
         context.user_data['admin_mode'] = None
-        context.user_data['current_product_id'] = None
-        context.user_data['new_product'] = None
+        if 'current_product_id' in context.user_data:
+            del context.user_data['current_product_id']
+        if 'new_product' in context.user_data:
+            del context.user_data['new_product']
