@@ -1,54 +1,47 @@
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from database import get_db_connection
-from utils.helpers import is_admin
-from config import logger
+from telegram.ext import CallbackContext
+from database import get_admin_stats, get_products, get_discounts, get_user_orders
 
-async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_admin(update.effective_user.id):
-        await update.callback_query.answer("❌ No access!")
-        return
-        
+logger = logging.getLogger(__name__)
+
+async def admin_stats(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     
-    conn = get_db_connection()
-    # Product statistics
-    products_count = conn.execute('SELECT COUNT() FROM products').fetchone()[0]
-    active_products = conn.execute('SELECT COUNT() FROM products WHERE active = 1 AND quantity > 0').fetchone()[0]
+    stats = get_admin_stats()
+    products = get_products()
+    discounts = get_discounts()
     
-    # Order statistics
-    total_orders = conn.execute('SELECT COUNT() FROM orders').fetchone()[0]
-    completed_orders = conn.execute('SELECT COUNT() FROM orders WHERE status = "completed"').fetchone()[0]
-    pending_orders = conn.execute('SELECT COUNT() FROM orders WHERE status = "pending"').fetchone()[0]
+    # Calculate additional stats
+    total_products_value = sum(product['price'] for product in products)
+    active_discounts = [d for d in discounts if d['active']]
     
-    # Discount code statistics
-    total_codes = conn.execute('SELECT COUNT() FROM discount_codes').fetchone()[0]
-    active_codes = conn.execute('SELECT COUNT() FROM discount_codes WHERE active = 1').fetchone()[0]
-    
-    # Cart statistics
-    cart_items = conn.execute('SELECT COUNT(*) FROM cart').fetchone()[0]
-    conn.close()
-    
-    message = (
-        f"📊 STORE STATISTICS\n\n"
-        f"🛍️ PRODUCTS:\n"
-        f"• All products: {products_count}\n"
-        f"• Active products: {active_products}\n\n"
-        f"📦 ORDERS:\n"
-        f"• All orders: {total_orders}\n"
-        f"• Completed: {completed_orders}\n"
-        f"• Pending: {pending_orders}\n\n"
-        f"🛒 CARTS:\n"
-        f"• Products in carts: {cart_items}\n\n"
-        f"🎫 DISCOUNT CODES:\n"
-        f"• All codes: {total_codes}\n"
-        f"• Active: {active_codes}"
+    text = (
+        "📊 Detailed Statistics:\n\n"
+        f"👥 Total Users: {stats.get('total_users', 0)}\n"
+        f"📦 Total Orders: {stats.get('total_orders', 0)}\n"
+        f"💰 Total Revenue: €{stats.get('total_revenue', 0):.2f}\n"
+        f"🛍️ Active Products: {stats.get('active_products', 0)}\n"
+        f"🏪 Total Products Value: €{total_products_value:.2f}\n"
+        f"🎫 Active Discounts: {stats.get('active_discounts', 0)}\n"
+        f"📋 Total Discount Codes: {len(discounts)}\n"
     )
     
+    # Add product list
+    if products:
+        text += "\n📦 Products:\n"
+        for product in products[:10]:  # Show first 10 products
+            status = "✅" if product['active'] else "❌"
+            text += f"{status} {product['name']} - €{product['price']:.2f}\n"
+        
+        if len(products) > 10:
+            text += f"... and {len(products) - 10} more products\n"
+    
     keyboard = [
-        [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")],
-        [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
+        [InlineKeyboardButton("🔄 Refresh", callback_data='admin_stats')],
+        [InlineKeyboardButton("🔙 Back", callback_data='admin')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(message, reply_markup=reply_markup)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup)
