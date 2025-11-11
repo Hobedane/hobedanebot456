@@ -11,6 +11,7 @@ DISCOUNT_CODE, DISCOUNT_PERCENTAGE, DISCOUNT_MAX_USES, DISCOUNT_CONFIRM = range(
 async def admin_discounts(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
+    
     keyboard = [
         [InlineKeyboardButton("Add Discount", callback_data='add_discount')],
         [InlineKeyboardButton("View All Discounts", callback_data='view_discounts')],
@@ -22,11 +23,12 @@ async def admin_discounts(update: Update, context: CallbackContext) -> None:
 async def add_discount_start(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
+    
     await query.edit_message_text("Enter discount code:")
     return DISCOUNT_CODE
 
 async def add_discount_code(update: Update, context: CallbackContext) -> int:
-    code = update.message.text.strip()
+    code = update.message.text.strip().upper()
     if not code:
         await update.message.reply_text("Please enter a valid discount code:")
         return DISCOUNT_CODE
