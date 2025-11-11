@@ -29,7 +29,7 @@ from handlers.payment_approval import (
     confirm_reject_payment, cancel_reject_payment
 )
 
-# Unified message handler - PARANDATUD LOOGIKA
+# Unified message handler
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     text = update.message.text
@@ -110,6 +110,18 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
         from handlers.admin_products import handle_product_quantity
         await handle_product_quantity(update, context)
         return
+    elif admin_mode == 'adding_product_image1':
+        from handlers.admin_products import handle_product_image1
+        await handle_product_image1(update, context)
+        return
+    elif admin_mode == 'adding_product_image2_choice':
+        from handlers.admin_products import handle_image2_choice
+        await handle_image2_choice(update, context)
+        return
+    elif admin_mode == 'adding_product_image2':
+        from handlers.admin_products import handle_product_image2
+        await handle_product_image2(update, context)
+        return
     elif admin_mode == 'adding_product_coordinates':
         from handlers.admin_products import handle_product_coordinates
         await handle_product_coordinates(update, context)
@@ -122,7 +134,17 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_product_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Ühendatud pildihandler kõikidele piltidele"""
     if update.message.photo:
-        await update.message.reply_text("✅ Image received!")
+        # Check if we're in product image adding mode
+        admin_mode = context.user_data.get('admin_mode')
+        
+        if admin_mode == 'adding_product_image1':
+            from handlers.admin_products import handle_product_image1
+            await handle_product_image1(update, context)
+        elif admin_mode == 'adding_product_image2':
+            from handlers.admin_products import handle_product_image2
+            await handle_product_image2(update, context)
+        else:
+            await update.message.reply_text("✅ Image received! But I'm not sure what to do with it.")
 
 def main() -> None:
     # Initialize database
