@@ -73,6 +73,22 @@ def init_db():
             )
         ''')
         
+        # Payments table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                order_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL,
+                method TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                transaction_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES orders (id)
+            )
+        ''')
+        
         # Discounts table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS discounts (
@@ -87,6 +103,46 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        # Content table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS content (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE NOT NULL,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Exchange rates table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS exchange_rates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                currency TEXT UNIQUE NOT NULL,
+                rate REAL NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Insert default exchange rates
+        cursor.execute('''
+            INSERT OR IGNORE INTO exchange_rates (currency, rate) 
+            VALUES ('EUR', 1.0), ('USD', 1.1), ('BTC', 0.000025)
+        ''')
+        
+        # Insert default content
+        default_content = [
+            ('welcome_message', 'Welcome to our shop!'),
+            ('about_us', 'About us information'),
+            ('contact', 'Contact information'),
+            ('website', 'https://example.com'),
+            ('rules', 'Shop rules'),
+            ('faq', 'Frequently asked questions'),
+            ('success_message', 'Thank you for your purchase!')
+        ]
+        
+        for key, value in default_content:
+            cursor.execute('INSERT OR IGNORE INTO content (key, value) VALUES (?, ?)', (key, value))
         
         conn.commit()
 
@@ -281,4 +337,28 @@ def delete_discount(discount_id):
     with sqlite3.connect(DATABASE) as conn:
         cursor = conn.cursor()
         cursor.execute('DELETE FROM discounts WHERE id = ?', (discount_id,))
+        conn.commit()
+
+def get_content(key):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM content WHERE key = ?', (key,))
+        return cursor.fetchone()
+
+def update_content(key, value):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE content SET value = ? WHERE key = ?', (value, key))
+        conn.commit()
+
+def get_exchange_rate(currency):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM exchange_rates WHERE currency = ?', (currency,))
+        return cursor.fetchone()
+
+def update_exchange_rate(currency, rate):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE exchange_rates SET rate = ? WHERE currency = ?', (rate, currency))
         conn.commit()
