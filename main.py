@@ -29,37 +29,52 @@ from handlers.payment_approval import (
     confirm_reject_payment, cancel_reject_payment
 )
 
-# Unified message handler
+# Unified message handler - TÄIELIKULT ÜMBER KIRJUTATUD
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     text = update.message.text
     
-    # KÕIGEPEALT kontrolli content editing - SEE ON OLULINE!
-    if 'editing_content' in context.user_data:
-        from handlers.admin_content import handle_content_edit
-        await handle_content_edit(update, context)
-        return
+    # DEBUG: Logime kõik sissetulevad sõnumid
+    logger.info(f"Received message: {text} from user {user_id}")
+    logger.info(f"Current admin_mode: {context.user_data.get('admin_mode')}")
+    logger.info(f"Context keys: {list(context.user_data.keys())}")
     
-    # Siis kontrolli payment editing
-    if 'editing_payment' in context.user_data:
-        from handlers.admin_payments import handle_payment_edit
-        await handle_payment_edit(update, context)
-        return
-    
-    # Siis kontrolli discount code waiting (KLIENDI POOLNE)
-    if context.user_data.get('waiting_discount_code'):
-        await handle_discount_code_input(update, context)
-        return
-    
-    # Siis kontrolli payment source address waiting
-    if context.user_data.get('waiting_payment_source'):
-        await handle_payment_source(update, context)
-        return
-    
-    # ALLES NÜÜD kontrolli admin mode'e - SEE ON PARANDUS!
+    # KONTROLLI KÕIGEpealt ADMIN MODE'd - SEE ON KRIIITILINE MUUDATUS!
     admin_mode = context.user_data.get('admin_mode')
     
-    if admin_mode == 'updating_exchange_rate':
+    if admin_mode == 'adding_product_name':
+        from handlers.admin_products import handle_product_name
+        await handle_product_name(update, context)
+        return
+    elif admin_mode == 'adding_product_price':
+        from handlers.admin_products import handle_product_price
+        await handle_product_price(update, context)
+        return
+    elif admin_mode == 'adding_product_description':
+        from handlers.admin_products import handle_product_description
+        await handle_product_description(update, context)
+        return
+    elif admin_mode == 'adding_product_quantity':
+        from handlers.admin_products import handle_product_quantity
+        await handle_product_quantity(update, context)
+        return
+    elif admin_mode == 'adding_product_image1':
+        from handlers.admin_products import handle_product_image1
+        await handle_product_image1(update, context)
+        return
+    elif admin_mode == 'adding_product_image2_choice':
+        from handlers.admin_products import handle_image2_choice
+        await handle_image2_choice(update, context)
+        return
+    elif admin_mode == 'adding_product_image2':
+        from handlers.admin_products import handle_product_image2
+        await handle_product_image2(update, context)
+        return
+    elif admin_mode == 'adding_product_coordinates':
+        from handlers.admin_products import handle_product_coordinates
+        await handle_product_coordinates(update, context)
+        return
+    elif admin_mode == 'updating_exchange_rate':
         await handle_exchange_rate_update(update, context)
         return
     elif admin_mode == 'adding_crypto_type':
@@ -94,37 +109,24 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
         from handlers.admin_discounts import handle_discount_max_uses
         await handle_discount_max_uses(update, context)
         return
-    elif admin_mode == 'adding_product_name':
-        from handlers.admin_products import handle_product_name
-        await handle_product_name(update, context)
+    
+    # ALLES NÜÜD kontrolli muid tingimusi
+    if 'editing_content' in context.user_data:
+        from handlers.admin_content import handle_content_edit
+        await handle_content_edit(update, context)
         return
-    elif admin_mode == 'adding_product_price':
-        from handlers.admin_products import handle_product_price
-        await handle_product_price(update, context)
+    
+    if 'editing_payment' in context.user_data:
+        from handlers.admin_payments import handle_payment_edit
+        await handle_payment_edit(update, context)
         return
-    elif admin_mode == 'adding_product_description':
-        from handlers.admin_products import handle_product_description
-        await handle_product_description(update, context)
+    
+    if context.user_data.get('waiting_discount_code'):
+        await handle_discount_code_input(update, context)
         return
-    elif admin_mode == 'adding_product_quantity':
-        from handlers.admin_products import handle_product_quantity
-        await handle_product_quantity(update, context)
-        return
-    elif admin_mode == 'adding_product_image1':
-        from handlers.admin_products import handle_product_image1
-        await handle_product_image1(update, context)
-        return
-    elif admin_mode == 'adding_product_image2_choice':
-        from handlers.admin_products import handle_image2_choice
-        await handle_image2_choice(update, context)
-        return
-    elif admin_mode == 'adding_product_image2':
-        from handlers.admin_products import handle_product_image2
-        await handle_product_image2(update, context)
-        return
-    elif admin_mode == 'adding_product_coordinates':
-        from handlers.admin_products import handle_product_coordinates
-        await handle_product_coordinates(update, context)
+    
+    if context.user_data.get('waiting_payment_source'):
+        await handle_payment_source(update, context)
         return
     
     # If no specific handler, send to main menu
@@ -136,6 +138,8 @@ async def handle_product_image(update: Update, context: ContextTypes.DEFAULT_TYP
     if update.message.photo:
         # Check if we're in product image adding mode
         admin_mode = context.user_data.get('admin_mode')
+        
+        logger.info(f"Photo received, admin_mode: {admin_mode}")
         
         if admin_mode == 'adding_product_image1':
             from handlers.admin_products import handle_product_image1
