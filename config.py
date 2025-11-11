@@ -3,29 +3,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Bot configuration
+# Bot token from environment variable
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('ADMIN_IDS') else []
-DATABASE = 'shop_bot.db'
 
-# Payment configuration (if using any payment gateway)
-PAYMENT_PROVIDER = os.getenv('PAYMENT_PROVIDER', '')
-PAYMENT_TOKEN = os.getenv('PAYMENT_TOKEN', '')
+# Admin user IDs (replace with your actual admin IDs)
+ADMINS = [123456789]  # Replace with your Telegram user ID
 
-# Conversation states
-(
-    START, ADMIN, PRODUCTS, CART, DISCOUNTS, PAYMENTS, CONTENT, STATS,
-    PRODUCT_NAME, PRODUCT_PRICE, PRODUCT_DESCRIPTION, PRODUCT_QUANTITY, PRODUCT_IMAGE, CONFIRM_ADD_PRODUCT,
-    PRODUCT_SECOND_IMAGE, PRODUCT_COORDINATES
-) = range(16)
+# Database configuration
+DATABASE_NAME = 'bot_database.db'
 
-# Admin states
-ADMIN_PRODUCTS = "admin_products"
+# Payment configuration
+CRYPTO_ADDRESS = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"  # Example Bitcoin address
+BANK_ACCOUNT = "123456789"
+BANK_NAME = "Example Bank"
+PAYPAL_EMAIL = "paypal@example.com"
 
-# Logging configuration
-import logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Other settings
+DEFAULT_EXCHANGE_RATE = 1.07
