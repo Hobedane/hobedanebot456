@@ -1,27 +1,27 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ConversationHandler, MessageHandler, Filters, CallbackQueryHandler, CommandHandler
+from telegram.ext import CallbackContext, ConversationHandler, MessageHandler, filters, CallbackQueryHandler, CommandHandler
 
 from database import get_product, get_all_products, add_product, update_product, delete_product
-from config import PRODUCT_NAME, PRODUCT_PRICE, PRODUCT_DESCRIPTION, PRODUCT_QUANTITY, PRODUCT_IMAGE, PRODUCT_SECOND_IMAGE, PRODUCT_COORDINATES, CONFIRM_ADD_PRODUCT, ADMIN_PRODUCTS
+from config import PRODUCT_NAME, PRODUCT_PRICE, PRODUCT_DESCRIPTION, PRODUCT_QUANTITY, PRODUCT_IMAGE, PRODUCT_SECOND_IMAGE, PRODUCT_COORDINATES, CONFIRM_ADD_PRODUCT
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def admin_products(update: Update, context: CallbackContext) -> int:
+async def admin_products(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("Add Product", callback_data="add_product")],
-        [InlineKeyboardButton("Edit Product", callback_data="edit_product")],
-        [InlineKeyboardButton("Delete Product", callback_data="delete_product")],
+        [InlineKeyboardButton("Add Product", callback_data="admin_add_product")],
+        [InlineKeyboardButton("Edit Product", callback_data="admin_edit_product")],
+        [InlineKeyboardButton("Delete Product", callback_data="admin_delete_product")],
         [InlineKeyboardButton("Back to Admin", callback_data="admin_back")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    query.edit_message_text(
+    await query.edit_message_text(
         "Product Management:\n\n"
         "• Add Product: Create new product listings\n"
         "• Edit Product: Modify existing products\n"
@@ -29,134 +29,132 @@ def admin_products(update: Update, context: CallbackContext) -> int:
         reply_markup=reply_markup
     )
     
-    return ADMIN_PRODUCTS
+    return PRODUCT_NAME
 
-def start_add_product(update: Update, context: CallbackContext) -> int:
+async def admin_add_product_start(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     context.user_data['new_product'] = {}
+    context.user_data['admin_mode'] = 'adding_product_name'
     
-    query.edit_message_text("Please enter the product name:")
+    await query.edit_message_text("Please enter the product name:")
     
     return PRODUCT_NAME
 
-def process_product_name(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
+async def handle_product_name(update: Update, context: CallbackContext) -> int:
     name = update.message.text
     
     context.user_data['new_product']['name'] = name
+    context.user_data['admin_mode'] = 'adding_product_price'
     
-    update.message.reply_text("Please enter the price for the product:")
+    await update.message.reply_text("Please enter the price for the product:")
     
     return PRODUCT_PRICE
 
-def process_product_price(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    price = update.message.text
+async def handle_product_price(update: Update, context: CallbackContext) -> int:
+    price_text = update.message.text
     
     # Validate price
     try:
-        price = float(price)
+        price = float(price_text)
         if price <= 0:
-            update.message.reply_text("Price must be a positive number. Please enter a valid price:")
+            await update.message.reply_text("Price must be a positive number. Please enter a valid price:")
             return PRODUCT_PRICE
     except ValueError:
-        update.message.reply_text("Please enter a valid number for price:")
+        await update.message.reply_text("Please enter a valid number for price:")
         return PRODUCT_PRICE
     
     context.user_data['new_product']['price'] = price
+    context.user_data['admin_mode'] = 'adding_product_description'
     
-    update.message.reply_text("Please enter the description for the product:")
+    await update.message.reply_text("Please enter the description for the product:")
     
     return PRODUCT_DESCRIPTION
 
-def process_product_description(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
+async def handle_product_description(update: Update, context: CallbackContext) -> int:
     description = update.message.text
     
     context.user_data['new_product']['description'] = description
+    context.user_data['admin_mode'] = 'adding_product_quantity'
     
-    update.message.reply_text("Please enter the quantity for the product:")
+    await update.message.reply_text("Please enter the quantity for the product:")
     
     return PRODUCT_QUANTITY
 
-def process_quantity(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
+async def handle_product_quantity(update: Update, context: CallbackContext) -> int:
     quantity_text = update.message.text
     
-    # Validate quantity
+    # Validate quantity - PARANDATUD OSA!
     try:
         quantity = int(quantity_text)
         if quantity < 0:
-            update.message.reply_text("Quantity must be a non-negative integer. Please enter a valid quantity:")
+            await update.message.reply_text("Quantity must be a non-negative integer. Please enter a valid quantity:")
             return PRODUCT_QUANTITY
     except ValueError:
-        update.message.reply_text("Please enter a valid integer for quantity:")
+        await update.message.reply_text("Please enter a valid integer for quantity:")
         return PRODUCT_QUANTITY
     
     context.user_data['new_product']['quantity'] = quantity
+    context.user_data['admin_mode'] = 'adding_product_image1'
     
-    # Ask for main product image
-    update.message.reply_text("Please send the main image for the product:")
+    await update.message.reply_text("Please send the main image for the product:")
     
     return PRODUCT_IMAGE
 
-def process_product_image(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    photo = update.message.photo[-1]
-    
-    context.user_data['new_product']['image'] = photo.file_id
-    
-    # Ask for optional second image
-    update.message.reply_text("Would you like to add a second image? Send the image or type /skip to continue:")
-    
-    return PRODUCT_SECOND_IMAGE
+async def handle_product_image1(update: Update, context: CallbackContext) -> int:
+    if update.message.photo:
+        photo = update.message.photo[-1]
+        context.user_data['new_product']['image'] = photo.file_id
+        context.user_data['admin_mode'] = 'adding_product_image2_choice'
+        
+        keyboard = [
+            [InlineKeyboardButton("Add Second Image", callback_data="add_second_image")],
+            [InlineKeyboardButton("Skip Second Image", callback_data="skip_second_image")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text("Would you like to add a second image?", reply_markup=reply_markup)
+        
+        return PRODUCT_SECOND_IMAGE
+    else:
+        await update.message.reply_text("Please send an image for the product.")
+        return PRODUCT_IMAGE
 
-def process_product_image_text(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    update.message.reply_text("You didn't send an image. Please send an image for the product or type /cancel to cancel.")
-    return PRODUCT_IMAGE
+async def handle_image2_choice(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'add_second_image':
+        context.user_data['admin_mode'] = 'adding_product_image2'
+        await query.edit_message_text("Please send the second image for the product:")
+        return PRODUCT_SECOND_IMAGE
+    else:
+        context.user_data['new_product']['second_image'] = None
+        context.user_data['admin_mode'] = 'adding_product_coordinates'
+        await query.edit_message_text("Please enter the coordinates/location for the product (e.g., '58.1234, 25.1234' or 'Tartu, Estonia'):")
+        return PRODUCT_COORDINATES
 
-def process_second_image(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    photo = update.message.photo[-1]
-    
-    context.user_data['new_product']['second_image'] = photo.file_id
-    
-    # Ask for coordinates
-    update.message.reply_text("Please enter the coordinates/location for the product (e.g., '58.1234, 25.1234' or 'Tartu, Estonia'):")
-    
-    return PRODUCT_COORDINATES
+async def handle_product_image2(update: Update, context: CallbackContext) -> int:
+    if update.message.photo:
+        photo = update.message.photo[-1]
+        context.user_data['new_product']['second_image'] = photo.file_id
+        context.user_data['admin_mode'] = 'adding_product_coordinates'
+        
+        await update.message.reply_text("Please enter the coordinates/location for the product (e.g., '58.1234, 25.1234' or 'Tartu, Estonia'):")
+        
+        return PRODUCT_COORDINATES
+    else:
+        await update.message.reply_text("Please send an image for the product.")
+        return PRODUCT_SECOND_IMAGE
 
-def skip_second_image(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    context.user_data['new_product']['second_image'] = None
-    
-    # Ask for coordinates
-    update.message.reply_text("Please enter the coordinates/location for the product (e.g., '58.1234, 25.1234' or 'Tartu, Estonia'):")
-    
-    return PRODUCT_COORDINATES
-
-def process_second_image_text(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    text = update.message.text
-    
-    if text.lower() == '/skip':
-        return skip_second_image(update, context)
-    
-    update.message.reply_text("Please send an image or type /skip to continue:")
-    return PRODUCT_SECOND_IMAGE
-
-def process_coordinates(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
+async def handle_product_coordinates(update: Update, context: CallbackContext) -> int:
     coordinates = update.message.text
     
     context.user_data['new_product']['coordinates'] = coordinates
+    context.user_data['admin_mode'] = None
     
-    return ask_confirm_add_product(update, context)
-
-def ask_confirm_add_product(update: Update, context: CallbackContext) -> int:
+    # Show confirmation
     product = context.user_data['new_product']
     
     text = (
@@ -176,15 +174,15 @@ def ask_confirm_add_product(update: Update, context: CallbackContext) -> int:
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if 'image' in product:
-        update.message.reply_photo(photo=product['image'], caption=text, reply_markup=reply_markup)
+        await update.message.reply_photo(photo=product['image'], caption=text, reply_markup=reply_markup)
     else:
-        update.message.reply_text(text, reply_markup=reply_markup)
+        await update.message.reply_text(text, reply_markup=reply_markup)
     
     return CONFIRM_ADD_PRODUCT
 
-def confirm_add_product(update: Update, context: CallbackContext) -> int:
+async def confirm_add_product(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     if query.data == 'confirm_product':
         product = context.user_data['new_product']
@@ -200,101 +198,110 @@ def confirm_add_product(update: Update, context: CallbackContext) -> int:
             coordinates=product.get('coordinates')
         )
         
-        query.edit_message_text("Product added successfully!")
+        await query.edit_message_text("✅ Product added successfully!")
     else:
-        query.edit_message_text("Product addition cancelled.")
+        await query.edit_message_text("❌ Product addition cancelled.")
     
     # Clear user_data
     context.user_data.pop('new_product', None)
+    context.user_data.pop('admin_mode', None)
     
     return ConversationHandler.END
 
-def edit_product(update: Update, context: CallbackContext) -> int:
+async def admin_edit_product(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
-    products = get_all_products()
+    # Extract product ID from callback data (format: "admin_edit_product_{id}")
+    product_id = int(query.data.split('_')[3])
     
-    if not products:
-        query.edit_message_text("No products available to edit.")
-        return ConversationHandler.END
+    # Get product from database
+    product = get_product(product_id)
     
-    keyboard = []
-    for product in products:
-        keyboard.append([InlineKeyboardButton(product['name'], callback_data=f"edit_{product['id']}")])
+    if product:
+        context.user_data['editing_product'] = product
+        context.user_data['admin_mode'] = 'editing_product'
+        
+        keyboard = [
+            [InlineKeyboardButton("Edit Name", callback_data=f"edit_name_{product_id}")],
+            [InlineKeyboardButton("Edit Price", callback_data=f"edit_price_{product_id}")],
+            [InlineKeyboardButton("Edit Description", callback_data=f"edit_description_{product_id}")],
+            [InlineKeyboardButton("Edit Quantity", callback_data=f"edit_quantity_{product_id}")],
+            [InlineKeyboardButton("Edit Image", callback_data=f"edit_image_{product_id}")],
+            [InlineKeyboardButton("Back to Products", callback_data="admin_products")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"Editing Product: {product['name']}\n\n"
+            f"Price: ${product['price']}\n"
+            f"Quantity: {product['quantity']}\n"
+            f"Description: {product['description']}\n\n"
+            "Select what you want to edit:",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text("❌ Product not found!")
     
-    keyboard.append([InlineKeyboardButton("Back", callback_data="products")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    query.edit_message_text("Select a product to edit:", reply_markup=reply_markup)
-    
-    return ADMIN_PRODUCTS
+    return PRODUCT_NAME
 
-def delete_product_handler(update: Update, context: CallbackContext) -> int:
+async def admin_delete_product(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
-    products = get_all_products()
+    # Extract product ID from callback data (format: "admin_delete_product_{id}")
+    product_id = int(query.data.split('_')[3])
     
-    if not products:
-        query.edit_message_text("No products available to delete.")
-        return ConversationHandler.END
+    # Get product from database
+    product = get_product(product_id)
     
-    keyboard = []
-    for product in products:
-        keyboard.append([InlineKeyboardButton(product['name'], callback_data=f"delete_{product['id']}")])
+    if product:
+        keyboard = [
+            [InlineKeyboardButton("✅ Confirm Delete", callback_data=f"confirm_delete_{product_id}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="admin_products")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"Are you sure you want to delete:\n\n"
+            f"Product: {product['name']}\n"
+            f"Price: ${product['price']}\n"
+            f"Quantity: {product['quantity']}\n\n"
+            "This action cannot be undone!",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text("❌ Product not found!")
     
-    keyboard.append([InlineKeyboardButton("Back", callback_data="products")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    query.edit_message_text("Select a product to delete:", reply_markup=reply_markup)
-    
-    return ADMIN_PRODUCTS
+    return PRODUCT_NAME
 
-def cancel(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
+async def confirm_delete_product(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    # Extract product ID from callback data (format: "confirm_delete_{id}")
+    product_id = int(query.data.split('_')[2])
+    
+    # Delete product from database
+    delete_product(product_id)
+    
+    await query.edit_message_text("✅ Product deleted successfully!")
+    
+    # Clear user_data
+    context.user_data.pop('editing_product', None)
+    context.user_data.pop('admin_mode', None)
+    
+    return ConversationHandler.END
+
+async def cancel_operation(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    # Clear user_data
     context.user_data.pop('new_product', None)
-    update.message.reply_text("Operation cancelled.")
+    context.user_data.pop('editing_product', None)
+    context.user_data.pop('admin_mode', None)
+    
+    await query.edit_message_text("❌ Operation cancelled.")
+    
     return ConversationHandler.END
-
-def admin_products_conv() -> ConversationHandler:
-    return ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_products, pattern='^products$')],
-        states={
-            ADMIN_PRODUCTS: [
-                CallbackQueryHandler(admin_products, pattern='^products$'),
-                CallbackQueryHandler(start_add_product, pattern='^add_product$'),
-                CallbackQueryHandler(edit_product, pattern='^edit_product$'),
-                CallbackQueryHandler(delete_product_handler, pattern='^delete_product$'),
-            ],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        map_to_parent={
-            ConversationHandler.END: ADMIN_PRODUCTS
-        }
-    )
-
-def add_product_conv() -> ConversationHandler:
-    return ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_add_product, pattern='^add_product$')],
-        states={
-            PRODUCT_NAME: [MessageHandler(Filters.text & ~Filters.command, process_product_name)],
-            PRODUCT_PRICE: [MessageHandler(Filters.text & ~Filters.command, process_product_price)],
-            PRODUCT_DESCRIPTION: [MessageHandler(Filters.text & ~Filters.command, process_product_description)],
-            PRODUCT_QUANTITY: [MessageHandler(Filters.text & ~Filters.command, process_quantity)],
-            PRODUCT_IMAGE: [
-                MessageHandler(Filters.photo, process_product_image),
-                MessageHandler(Filters.text & ~Filters.command, process_product_image_text)
-            ],
-            PRODUCT_SECOND_IMAGE: [
-                MessageHandler(Filters.photo, process_second_image),
-                MessageHandler(Filters.text & ~Filters.command, process_second_image_text)
-            ],
-            PRODUCT_COORDINATES: [MessageHandler(Filters.text & ~Filters.command, process_coordinates)],
-            CONFIRM_ADD_PRODUCT: [CallbackQueryHandler(confirm_add_product, pattern='^(confirm|cancel)_product$')]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        map_to_parent={
-            ConversationHandler.END: ADMIN_PRODUCTS
-        }
-    )
