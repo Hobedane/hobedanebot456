@@ -1,7 +1,7 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
-from database import get_admin_stats, get_products, get_discounts, get_user_orders
+from database import get_admin_stats, get_products, get_discounts
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,8 @@ async def admin_stats(update: Update, context: CallbackContext) -> None:
         text += "\n📦 Products:\n"
         for product in products[:10]:  # Show first 10 products
             status = "✅" if product['active'] else "❌"
-            text += f"{status} {product['name']} - €{product['price']:.2f}\n"
+            stock_status = f"Stock: {product.get('stock', 0)}"
+            text += f"{status} {product['name']} - €{product['price']:.2f} ({stock_status})\n"
         
         if len(products) > 10:
             text += f"... and {len(products) - 10} more products\n"
