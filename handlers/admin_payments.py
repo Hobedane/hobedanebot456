@@ -9,10 +9,10 @@ async def admin_payments(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
     
-    payment_methods = get_payment_methods()
+    payment_methods_list = get_payment_methods()
     
     keyboard = []
-    for method in payment_methods:
+    for method in payment_methods_list:
         status = "✅ Enabled" if method['enabled'] else "❌ Disabled"
         keyboard.append([
             InlineKeyboardButton(
