@@ -87,7 +87,13 @@ async def admin_add_product_start(update: Update, context: ContextTypes.DEFAULT_
         
     query = update.callback_query
     await query.answer()
-    
+
+    # Reset any previous state that might interfere
+    state_keys = ['editing_content', 'editing_payment', 'waiting_discount_code', 'waiting_payment_source']
+    for key in state_keys:
+        if key in context.user_data:
+            del context.user_data[key]
+
     await query.edit_message_text(
         "Enter product name:",
         reply_markup=InlineKeyboardMarkup([[
