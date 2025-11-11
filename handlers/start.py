@@ -1,37 +1,56 @@
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from database import get_db_connection
-from utils.helpers import is_admin
+from telegram.ext import CallbackContext
+from database import get_content, add_user
+from config import ADMINS
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
+logger = logging.getLogger(__name__)
+
+async def start(update: Update, context: CallbackContext) -> None:
+    user = update.effective_user
+    add_user(user.id, user.username, user.first_name, user.last_name)
     
-    # Load welcome message from database
-    conn = get_db_connection()
-    welcome_content = conn.execute('SELECT * FROM content WHERE key = ?', ('welcome_message',)).fetchone()
-    conn.close()
-    
-    welcome_text = welcome_content['content'] if welcome_content else "Hello! 👋 I am your store bot.\n\nChoose from the options below:"
+    content = get_content()
+    welcome_message = content.get('welcome_message', 'Welcome to our store! 🛍️')
     
     keyboard = [
-        [InlineKeyboardButton("🛍️ Browse Products", callback_data="view_products")],
-        [InlineKeyboardButton("🛒 My Cart", callback_data="view_cart")],
-        [InlineKeyboardButton("ℹ️ About Us", callback_data="about_us")],
-        [InlineKeyboardButton("📞 Contact", callback_data="contact")],
-        [InlineKeyboardButton("🌐 Website", callback_data="website")],
-        [InlineKeyboardButton("📝 Rules", callback_data="rules")],
-        [InlineKeyboardButton("🔍 FAQ", callback_data="faq")]
+        [InlineKeyboardButton("🛍️ Products", callback_data='products')],
+        [InlineKeyboardButton("🛒 Cart", callback_data='cart')],
+        [InlineKeyboardButton("🎫 Discounts", callback_data='apply_discount')],
+        [InlineKeyboardButton("ℹ️ About", callback_data='about')]
     ]
     
-    if is_admin(user_id):
-        keyboard.append([InlineKeyboardButton("🛠️ Admin Panel", callback_data="admin_panel")])
+    # Add admin button for admins
+    if user.id in ADMINS:
+        keyboard.append([InlineKeyboardButton("👑 Admin", callback_data='admin')])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if update.message:
-        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     else:
-        await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup)
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(welcome_message, reply_markup=reply_markup)
 
-async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await start(update, context)
+async def about(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    text = (
+        "🤖 About Our Store\n\n"
+        "Welcome to our Telegram bot store! "
+        "We offer various products with secure payment methods.\n\n"
+        "Features:\n"
+        "• 🛍️ Browse products\n"
+        "• 🛒 Easy shopping cart\n"
+        "• 🎫 Discount codes\n"
+        "• 💳 Multiple payment options\n"
+        "• 🔒 Secure transactions\n\n"
+        "For support, please contact us."
+    )
+    
+    keyboard = [[InlineKeyboardButton("🔙 Back", callback_data='start')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(text, reply_markup=reply_markup)
