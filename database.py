@@ -1,122 +1,282 @@
 import sqlite3
-import datetime
-from config import logger
+import logging
+from config import DATABASE
 
-def init_database():
-    conn = sqlite3.connect('poebot.db')
-    c = conn.cursor()
-    
-    # Products - ADDED SECOND IMAGE FIELD
-    c.execute('''CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        name TEXT NOT NULL, 
-        price REAL NOT NULL, 
-        description TEXT, 
-        image_id TEXT, 
-        image_id2 TEXT, 
-        quantity INTEGER DEFAULT 1, 
-        active BOOLEAN DEFAULT 1, 
-        map_coordinates TEXT, 
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Content (about us, contact, rules etc)
-    c.execute('''CREATE TABLE IF NOT EXISTS content (
-        key TEXT PRIMARY KEY, 
-        title TEXT NOT NULL, 
-        content TEXT NOT NULL, 
-        active BOOLEAN DEFAULT 1)''')
-    
-    # Payment settings
-    c.execute('''CREATE TABLE IF NOT EXISTS payment_settings (
-        crypto_type TEXT PRIMARY KEY, 
-        address TEXT NOT NULL, 
-        blockchain TEXT NOT NULL, 
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # NEW: Exchange rate table
-    c.execute('''CREATE TABLE IF NOT EXISTS exchange_rates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        eur_to_usd REAL NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Discount codes - UPDATED WITH USERNAME FIELD
-    c.execute('''CREATE TABLE IF NOT EXISTS discount_codes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        code TEXT UNIQUE NOT NULL, 
-        discount_percent INTEGER NOT NULL, 
-        expires DATE, 
-        active BOOLEAN DEFAULT 1, 
-        used_count INTEGER DEFAULT 0, 
-        max_uses INTEGER DEFAULT -1, 
-        is_general BOOLEAN DEFAULT 1, 
-        client_id INTEGER,
-        username TEXT,  -- ADDED USERNAME FIELD
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Orders
-    c.execute('''CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        order_id TEXT UNIQUE NOT NULL, 
-        client_id INTEGER NOT NULL, 
-        product_id INTEGER NOT NULL, 
-        status TEXT DEFAULT 'pending', 
-        discount_code TEXT, 
-        final_price REAL, 
-        payment_source_address TEXT, 
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Shopping cart
-    c.execute('''CREATE TABLE IF NOT EXISTS cart (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        user_id INTEGER NOT NULL, 
-        product_id INTEGER NOT NULL, 
-        quantity INTEGER DEFAULT 1, 
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Add default content (English)
-    default_content = [
-        ('about_us', 'ℹ️ About Us', 'We are a reliable store offering quality products.', 1),
-        ('contact', '📞 Contact', '📧 Email: info@store.com\n📱 Phone: +1 234 567 890\n📍 Address: Example St 1, City', 1),
-        ('website', '🌐 Website', 'https://www.ourstore.com', 1),
-        ('rules', '📝 Rules', '1. Products shipped within 24h\n2. Returns within 14 days\n3. Customer service: Mon-Fri 9-18', 1),
-        ('faq', '🔍 FAQ', 'Q: How fast do you ship?\nA: 1-2 business days\n\nQ: Do you ship internationally?\nA: Yes, worldwide', 1),
-        ('success_message', '🎉 Thank you for your purchase!', 'Enjoy your product! We hope it brings you joy! ❤️', 1),
-        ('welcome_message', '👋 Welcome', 'Hello! I am your store bot. Choose from the options below:', 1)
-    ]
-    c.executemany('''INSERT OR IGNORE INTO content (key, title, content, active) VALUES (?, ?, ?, ?)''', default_content)
-    
-    # Check if payment settings already exist before inserting defaults
-    existing_payments = c.execute('SELECT COUNT() FROM payment_settings').fetchone()[0]
-    if existing_payments == 0:
-        default_payments = [
-            ('btc', 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', 'Bitcoin'),
-            ('eth', '0x71C7656EC7ab88b098defB751B7401B5f6d8976F', 'Ethereum')
-        ]
-        c.executemany('''INSERT INTO payment_settings (crypto_type, address, blockchain) VALUES (?, ?, ?)''', default_payments)
-    
-    # Insert default exchange rate
-    existing_rates = c.execute('SELECT COUNT() FROM exchange_rates').fetchone()[0]
-    if existing_rates == 0:
-        c.execute('INSERT INTO exchange_rates (eur_to_usd) VALUES (?)', (1.16,))
-    
-    conn.commit()
-    conn.close()
+# Enable logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def get_db_connection():
-    conn = sqlite3.connect('poebot.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+def init_db():
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        
+        # Products table with new fields
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                price REAL NOT NULL,
+                description TEXT,
+                quantity INTEGER NOT NULL,
+                image TEXT,
+                second_image TEXT,
+                coordinates TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Users table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE NOT NULL,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Cart table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cart (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (product_id) REFERENCES products (id)
+            )
+        ''')
+        
+        # Orders table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                total_amount REAL NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Order items table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS order_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity INTEGER NOT NULL,
+                price REAL NOT NULL,
+                FOREIGN KEY (order_id) REFERENCES orders (id),
+                FOREIGN KEY (product_id) REFERENCES products (id)
+            )
+        ''')
+        
+        # Discounts table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS discounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                discount_type TEXT NOT NULL,
+                value REAL NOT NULL,
+                min_order REAL,
+                max_uses INTEGER,
+                used_count INTEGER DEFAULT 0,
+                expires_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        conn.commit()
 
-def get_exchange_rate():
-    """Get current EUR to USD exchange rate"""
-    conn = get_db_connection()
-    rate = conn.execute('SELECT eur_to_usd FROM exchange_rates ORDER BY updated_at DESC LIMIT 1').fetchone()
-    conn.close()
-    return rate['eur_to_usd'] if rate else 1.16
+def add_product(name, price, description, quantity, image=None, second_image=None, coordinates=None):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO products (name, price, description, quantity, image, second_image, coordinates)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (name, price, description, quantity, image, second_image, coordinates))
+        conn.commit()
+        return cursor.lastrowid
 
-def update_exchange_rate(new_rate):
-    """Update EUR to USD exchange rate"""
-    conn = get_db_connection()
-    conn.execute('INSERT INTO exchange_rates (eur_to_usd) VALUES (?)', (new_rate,))
-    conn.commit()
-    conn.close()
+def get_product(product_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM products WHERE id = ?', (product_id,))
+        return cursor.fetchone()
+
+def get_all_products():
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM products ORDER BY created_at DESC')
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+def update_product(product_id, name, price, description, quantity, image=None, second_image=None, coordinates=None):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        if image and second_image and coordinates:
+            cursor.execute('''
+                UPDATE products 
+                SET name = ?, price = ?, description = ?, quantity = ?, image = ?, second_image = ?, coordinates = ?
+                WHERE id = ?
+            ''', (name, price, description, quantity, image, second_image, coordinates, product_id))
+        elif image and second_image:
+            cursor.execute('''
+                UPDATE products 
+                SET name = ?, price = ?, description = ?, quantity = ?, image = ?, second_image = ?
+                WHERE id = ?
+            ''', (name, price, description, quantity, image, second_image, product_id))
+        elif image:
+            cursor.execute('''
+                UPDATE products 
+                SET name = ?, price = ?, description = ?, quantity = ?, image = ?
+                WHERE id = ?
+            ''', (name, price, description, quantity, image, product_id))
+        else:
+            cursor.execute('''
+                UPDATE products 
+                SET name = ?, price = ?, description = ?, quantity = ?
+                WHERE id = ?
+            ''', (name, price, description, quantity, product_id))
+        conn.commit()
+
+def delete_product(product_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM products WHERE id = ?', (product_id,))
+        conn.commit()
+
+def add_user(user_id, username, first_name, last_name):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR IGNORE INTO users (user_id, username, first_name, last_name)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, username, first_name, last_name))
+        conn.commit()
+
+def get_user(user_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+        return cursor.fetchone()
+
+def add_to_cart(user_id, product_id, quantity=1):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        # Check if item already in cart
+        cursor.execute('SELECT * FROM cart WHERE user_id = ? AND product_id = ?', (user_id, product_id))
+        existing = cursor.fetchone()
+        
+        if existing:
+            cursor.execute('UPDATE cart SET quantity = quantity + ? WHERE user_id = ? AND product_id = ?', 
+                          (quantity, user_id, product_id))
+        else:
+            cursor.execute('INSERT INTO cart (user_id, product_id, quantity) VALUES (?, ?, ?)', 
+                          (user_id, product_id, quantity))
+        conn.commit()
+
+def get_cart(user_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT c.*, p.name, p.price, p.image 
+            FROM cart c 
+            JOIN products p ON c.product_id = p.id 
+            WHERE c.user_id = ?
+        ''', (user_id,))
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+def update_cart_item(user_id, product_id, quantity):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        if quantity <= 0:
+            cursor.execute('DELETE FROM cart WHERE user_id = ? AND product_id = ?', (user_id, product_id))
+        else:
+            cursor.execute('UPDATE cart SET quantity = ? WHERE user_id = ? AND product_id = ?', 
+                          (quantity, user_id, product_id))
+        conn.commit()
+
+def clear_cart(user_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM cart WHERE user_id = ?', (user_id,))
+        conn.commit()
+
+def create_order(user_id, total_amount):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO orders (user_id, total_amount) VALUES (?, ?)', (user_id, total_amount))
+        order_id = cursor.lastrowid
+        conn.commit()
+        return order_id
+
+def add_order_item(order_id, product_id, quantity, price):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)', 
+                      (order_id, product_id, quantity, price))
+        conn.commit()
+
+def get_order(order_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM orders WHERE id = ?', (order_id,))
+        return cursor.fetchone()
+
+def get_order_items(order_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT oi.*, p.name, p.image, p.second_image, p.coordinates
+            FROM order_items oi 
+            JOIN products p ON oi.product_id = p.id 
+            WHERE oi.order_id = ?
+        ''', (order_id,))
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+def update_order_status(order_id, status):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE orders SET status = ? WHERE id = ?', (status, order_id))
+        conn.commit()
+
+def add_discount(code, discount_type, value, min_order=None, max_uses=None, expires_at=None):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO discounts (code, discount_type, value, min_order, max_uses, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (code, discount_type, value, min_order, max_uses, expires_at))
+        conn.commit()
+
+def get_discount(code):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM discounts WHERE code = ?', (code,))
+        columns = [column[0] for column in cursor.description]
+        row = cursor.fetchone()
+        return dict(zip(columns, row)) if row else None
+
+def update_discount_usage(code):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE discounts SET used_count = used_count + 1 WHERE code = ?', (code,))
+        conn.commit()
+
+def get_all_discounts():
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM discounts ORDER BY created_at DESC')
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+def delete_discount(discount_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM discounts WHERE id = ?', (discount_id,))
+        conn.commit()
