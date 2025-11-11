@@ -1,15 +1,23 @@
-import logging
+import os
+from dotenv import load_dotenv
 
-# Logging setup
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+load_dotenv()
 
 # Bot configuration
-BOT_TOKEN = "8366585450:AAGoY_-J7SQh7pMtlEYeQvXwVmXFUChrgdY"
-ADMIN_USER_ID = 7991318409
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('ADMIN_IDS') else []
+DATABASE = 'shop_bot.db'
 
-# Exchange rate (manual)
-EXCHANGE_RATE_EUR_TO_USD = 1.16  # Default value, can be changed via admin
+# Payment configuration (if using any payment gateway)
+PAYMENT_PROVIDER = os.getenv('PAYMENT_PROVIDER', '')
+PAYMENT_TOKEN = os.getenv('PAYMENT_TOKEN', '')
+
+# Conversation states
+(
+    START, ADMIN, PRODUCTS, CART, DISCOUNTS, PAYMENTS, CONTENT, STATS,
+    PRODUCT_NAME, PRODUCT_PRICE, PRODUCT_DESCRIPTION, PRODUCT_QUANTITY, PRODUCT_IMAGE, CONFIRM_ADD_PRODUCT,
+    PRODUCT_SECOND_IMAGE, PRODUCT_COORDINATES
+) = range(18)
+
+# Admin states
+ADMIN_PRODUCTS = "admin_products"
