@@ -1,5 +1,4 @@
 import sqlite3
-import json
 import logging
 from typing import List, Dict, Any, Optional
 
@@ -27,7 +26,7 @@ def init_db():
         )
     ''')
     
-    # Products table
+    # Products table - LISATUD STOCK JA LOCATION
     conn.execute('''
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,6 +35,8 @@ def init_db():
             price REAL NOT NULL,
             image TEXT NOT NULL,
             second_image TEXT,
+            location TEXT,
+            stock INTEGER DEFAULT 1,
             active BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -54,7 +55,7 @@ def init_db():
         )
     ''')
     
-    # Orders table
+    # Orders table - LISATUD delivery_info
     conn.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,9 +66,8 @@ def init_db():
             status TEXT DEFAULT 'pending',
             payment_method TEXT,
             discount_code TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            FOREIGN KEY (product_id) REFERENCES products (id)
+            delivery_info TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -78,9 +78,7 @@ def init_db():
             user_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
             quantity INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            FOREIGN KEY (product_id) REFERENCES products (id)
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -148,13 +146,22 @@ def add_user(user_id: int, username: str, first_name: str, last_name: str = None
     conn.commit()
     conn.close()
 
-def get_products(active_only: bool = True) -> List[Dict]:
-    """Get all products"""
+def get_products(active_only: bool = True, in_stock_only: bool = False) -> List[Dict]:
+    """Get all products - LISATUD in_stock_only filter"""
     conn = get_db_connection()
+    query = 'SELECT * FROM products'
+    conditions = []
+    params = []
+    
     if active_only:
-        products = conn.execute('SELECT * FROM products WHERE active = TRUE').fetchall()
-    else:
-        products = conn.execute('SELECT * FROM products').fetchall()
+        conditions.append('active = TRUE')
+    if in_stock_only:
+        conditions.append('stock > 0')
+    
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    
+    products = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(product) for product in products]
 
@@ -165,12 +172,22 @@ def get_product(product_id: int) -> Optional[Dict]:
     conn.close()
     return dict(product) if product else None
 
-def add_product(name: str, description: str, price: float, image: str, second_image: str = None):
-    """Add product to database"""
+def add_product(name: str, description: str, price: float, image: str, second_image: str = None, location: str = None, stock: int = 1):
+    """Add product to database - LISATUD location ja stock"""
     conn = get_db_connection()
     conn.execute(
-        'INSERT INTO products (name, description, price, image, second_image) VALUES (?, ?, ?, ?, ?)',
-        (name, description, price, image, second_image)
+        'INSERT INTO products (name, description, price, image, second_image, location, stock) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (name, description, price, image, second_image, location, stock)
+    )
+    conn.commit()
+    conn.close()
+
+def update_product_stock(product_id: int, quantity: int):
+    """Update product stock after purchase"""
+    conn = get_db_connection()
+    conn.execute(
+        'UPDATE products SET stock = stock - ? WHERE id = ?',
+        (quantity, product_id)
     )
     conn.commit()
     conn.close()
@@ -263,7 +280,7 @@ def get_admin_stats() -> Dict[str, Any]:
     total_orders = conn.execute("SELECT COUNT(*) as count FROM orders WHERE status = 'completed'").fetchone()['count']
     total_revenue_result = conn.execute("SELECT SUM(amount) as total FROM orders WHERE status = 'completed'").fetchone()
     total_revenue = total_revenue_result['total'] if total_revenue_result['total'] else 0
-    active_products = conn.execute("SELECT COUNT(*) as count FROM products WHERE active = TRUE").fetchone()['count']
+    active_products = conn.execute("SELECT COUNT(*) as count FROM products WHERE active = TRUE AND stock > 0").fetchone()['count']
     active_discounts = conn.execute("SELECT COUNT(*) as count FROM discounts WHERE active = TRUE").fetchone()['count']
     
     conn.close()
@@ -321,7 +338,7 @@ def get_cart(user_id: int) -> List[Dict]:
     """Get user cart"""
     conn = get_db_connection()
     cart_items = conn.execute('''
-        SELECT c.*, p.name, p.price, p.image 
+        SELECT c.*, p.name, p.price, p.image, p.stock 
         FROM cart c 
         JOIN products p ON c.product_id = p.id 
         WHERE c.user_id = ?
@@ -351,11 +368,21 @@ def create_order(user_id: int, product_id: int, quantity: int, amount: float,
     conn.close()
     return order_id
 
+def update_order_delivery(order_id: int, delivery_info: str):
+    """Update order with delivery information"""
+    conn = get_db_connection()
+    conn.execute(
+        'UPDATE orders SET delivery_info = ? WHERE id = ?',
+        (delivery_info, order_id)
+    )
+    conn.commit()
+    conn.close()
+
 def get_user_orders(user_id: int) -> List[Dict]:
     """Get user orders"""
     conn = get_db_connection()
     orders = conn.execute('''
-        SELECT o.*, p.name, p.image 
+        SELECT o.*, p.name, p.image, p.second_image, p.location 
         FROM orders o 
         JOIN products p ON o.product_id = p.id 
         WHERE o.user_id = ?
@@ -363,3 +390,15 @@ def get_user_orders(user_id: int) -> List[Dict]:
     ''', (user_id,)).fetchall()
     conn.close()
     return [dict(order) for order in orders]
+
+def get_order(order_id: int):
+    """Get order by ID with user info"""
+    conn = get_db_connection()
+    order = conn.execute('''
+        SELECT o.*, u.user_id as customer_user_id 
+        FROM orders o 
+        JOIN users u ON o.user_id = u.id 
+        WHERE o.id = ?
+    ''', (order_id,)).fetchone()
+    conn.close()
+    return dict(order) if order else None
