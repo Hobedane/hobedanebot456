@@ -29,8 +29,8 @@ from handlers.payment_approval import (
     confirm_reject_payment, cancel_reject_payment
 )
 
-# Import complete_payment from payments
-from handlers.payments import complete_payment  # LISA SEE IMPORT
+# Import complete_payment from payments - LISA SEE IMPORT
+from handlers.payments import complete_payment
 
 # Unified message handler - TÄIELIKULT ÜMBER KIRJUTATUD
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
