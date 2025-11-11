@@ -29,6 +29,9 @@ from handlers.payment_approval import (
     confirm_reject_payment, cancel_reject_payment
 )
 
+# Import complete_payment from payments
+from handlers.payments import complete_payment  # LISA SEE IMPORT
+
 # Unified message handler - TÄIELIKULT ÜMBER KIRJUTATUD
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -234,6 +237,9 @@ def main() -> None:
     
     # Payment removal confirmation
     application.add_handler(CallbackQueryHandler(confirm_remove_payment, pattern="^confirm_remove_"))
+    
+    # LISA UUS HANDLER SIIN - see on vajalik, et pildid ja koordinaadid saadetaks kliendile
+    application.add_handler(CallbackQueryHandler(complete_payment, pattern='^complete_payment_'))
     
     # Back handler
     application.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
