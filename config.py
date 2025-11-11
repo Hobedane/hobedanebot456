@@ -17,7 +17,15 @@ PAYMENT_TOKEN = os.getenv('PAYMENT_TOKEN', '')
     START, ADMIN, PRODUCTS, CART, DISCOUNTS, PAYMENTS, CONTENT, STATS,
     PRODUCT_NAME, PRODUCT_PRICE, PRODUCT_DESCRIPTION, PRODUCT_QUANTITY, PRODUCT_IMAGE, CONFIRM_ADD_PRODUCT,
     PRODUCT_SECOND_IMAGE, PRODUCT_COORDINATES
-) = range(18)
+) = range(16)
 
 # Admin states
 ADMIN_PRODUCTS = "admin_products"
+
+# Logging configuration
+import logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
