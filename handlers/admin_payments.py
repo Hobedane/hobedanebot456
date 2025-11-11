@@ -103,6 +103,7 @@ async def remove_payment_start(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=reply_markup
     )
 
+# LISA SEE FUNKTSIOON
 async def confirm_remove_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
         await update.callback_query.answer("❌ No access!")
