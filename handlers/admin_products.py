@@ -294,7 +294,7 @@ async def handle_product_description(update: Update, context: ContextTypes.DEFAU
         description = update.message.text
         context.user_data['new_product']['description'] = description
         
-        # MUUDATUS: Salvesta toode kohe andmebaasi quantity=1-ga
+        # Salvesta toode kohe andmebaasi quantity=1-ga
         product_data = context.user_data['new_product']
         
         conn = get_db_connection()
