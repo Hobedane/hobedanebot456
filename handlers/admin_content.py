@@ -1,89 +1,79 @@
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ConversationHandler
-from database import get_content, update_content
+from telegram.ext import ContextTypes
+from database import get_db_connection
 
-logger = logging.getLogger(__name__)
-
-# States for content conversation
-ADMIN_CONTENT, ADMIN_CONTENT_SUCCESS, ADMIN_CONTENT_WELCOME = range(3)
-
-async def admin_content(update: Update, context: CallbackContext) -> None:
+async def admin_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
-    content = get_content()
-    
     keyboard = [
-        [InlineKeyboardButton("Success Message", callback_data='content_success')],
-        [InlineKeyboardButton("Welcome Message", callback_data='content_welcome')],
-        [InlineKeyboardButton("Back", callback_data='admin_back')]
+        [InlineKeyboardButton("👋 Welcome Message", callback_data="admin_edit_welcome_message")],
+        [InlineKeyboardButton("ℹ️ About Us", callback_data="admin_edit_about_us")],
+        [InlineKeyboardButton("📞 Contact", callback_data="admin_edit_contact")],
+        [InlineKeyboardButton("🌐 Website", callback_data="admin_edit_website")],
+        [InlineKeyboardButton("📝 Rules", callback_data="admin_edit_rules")],
+        [InlineKeyboardButton("🔍 FAQ", callback_data="admin_edit_faq")],
+        [InlineKeyboardButton("🎉 Success Message", callback_data="admin_edit_success_message")],
+        [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        "Content Management:\n\n"
-        f"Current Welcome Message: {content.get('welcome_message', 'Not set')[:50]}...\n"
-        f"Current Success Message: {content.get('success_message', 'Not set')[:50]}...",
+        "📝 Content Management:\n\n"
+        "Select page to edit content:",
         reply_markup=reply_markup
     )
 
-async def content_success(update: Update, context: CallbackContext) -> int:
+async def admin_edit_content_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    content_key = query.data.replace("admin_edit_", "")
     
-    current_content = get_content()
-    current_message = current_content.get('success_message', 'Not set')
+    conn = get_db_connection()
+    content = conn.execute('SELECT * FROM content WHERE key = ?', (content_key,)).fetchone()
+    conn.close()
+    
+    context.user_data['editing_content'] = content_key
     
     await query.edit_message_text(
-        f"Current Success Message:\n{current_message}\n\n"
-        "Please enter the new success message:"
+        f"✏️ Edit '{content['title']}':\n\n"
+        f"Current content:\n{content['content']}\n\n"
+        f"Enter new content:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Back to Content Management", callback_data="admin_content")
+        ]])
     )
-    return ADMIN_CONTENT_SUCCESS
 
-async def content_success_input(update: Update, context: CallbackContext) -> int:
-    success_message = update.message.text.strip()
-    
-    if not success_message:
-        await update.message.reply_text("Message cannot be empty. Please enter a valid message:")
-        return ADMIN_CONTENT_SUCCESS
-    
-    update_content('success_message', success_message)
-    
-    keyboard = [[InlineKeyboardButton("Back to Content", callback_data='admin_content')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text("✅ Success message updated!", reply_markup=reply_markup)
-    return ConversationHandler.END
-
-async def content_welcome(update: Update, context: CallbackContext) -> int:
+async def admin_edit_success_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    content_key = "success_message"
     
-    current_content = get_content()
-    current_message = current_content.get('welcome_message', 'Not set')
+    conn = get_db_connection()
+    content = conn.execute('SELECT * FROM content WHERE key = ?', (content_key,)).fetchone()
+    conn.close()
+    
+    context.user_data['editing_content'] = content_key
     
     await query.edit_message_text(
-        f"Current Welcome Message:\n{current_message}\n\n"
-        "Please enter the new welcome message:"
+        f"✏️ Edit '{content['title']}':\n\n"
+        f"Current content:\n{content['content']}\n\n"
+        f"Enter new content:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Back to Content Management", callback_data="admin_content")
+        ]])
     )
-    return ADMIN_CONTENT_WELCOME
 
-async def content_welcome_input(update: Update, context: CallbackContext) -> int:
-    welcome_message = update.message.text.strip()
-    
-    if not welcome_message:
-        await update.message.reply_text("Message cannot be empty. Please enter a valid message:")
-        return ADMIN_CONTENT_WELCOME
-    
-    update_content('welcome_message', welcome_message)
-    
-    keyboard = [[InlineKeyboardButton("Back to Content", callback_data='admin_content')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text("✅ Welcome message updated!", reply_markup=reply_markup)
-    return ConversationHandler.END
-
-async def cancel_content(update: Update, context: CallbackContext) -> int:
-    await update.message.reply_text('Content update canceled.')
-    return ConversationHandler.END
+async def handle_content_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if 'editing_content' in context.user_data:
+        content_key = context.user_data['editing_content']
+        new_content = update.message.text
+        
+        conn = get_db_connection()
+        conn.execute('UPDATE content SET content = ? WHERE key = ?', (new_content, content_key))
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text("✅ Content updated!")
+        del context.user_data['editing_content']
