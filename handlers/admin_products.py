@@ -293,50 +293,29 @@ async def handle_product_description(update: Update, context: ContextTypes.DEFAU
     if context.user_data.get('admin_mode') == 'adding_product_description':
         description = update.message.text
         context.user_data['new_product']['description'] = description
-        context.user_data['admin_mode'] = 'adding_product_quantity'
+        
+        # MUUDATUS: Salvesta toode kohe andmebaasi quantity=1-ga
+        product_data = context.user_data['new_product']
+        
+        conn = get_db_connection()
+        conn.execute('''INSERT INTO products (name, price, description, quantity, active) 
+                      VALUES (?, ?, ?, ?, ?)''', 
+                    (product_data['name'], product_data['price'], product_data['description'], 1, 1))
+        product_id = conn.lastrowid
+        conn.commit()
+        conn.close()
+        
+        context.user_data['current_product_id'] = product_id
+        context.user_data['admin_mode'] = 'adding_product_image1'
         
         await update.message.reply_text(
             f"✅ Description: {description}\n\n"
-            f"Enter product quantity (example: 5):",
+            f"🎉 Product added to database with quantity 1!\n\n"
+            f"Now send the first product image:",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
             ]])
         )
-
-async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if context.user_data.get('admin_mode') == 'adding_product_quantity':
-        try:
-            quantity = int(update.message.text)
-            product_data = context.user_data['new_product']
-            
-            # Save product to database
-            conn = get_db_connection()
-            conn.execute('''INSERT INTO products (name, price, description, quantity, active) 
-                          VALUES (?, ?, ?, ?, ?)''', 
-                        (product_data['name'], product_data['price'], product_data['description'], quantity, 1))
-            product_id = conn.lastrowid
-            conn.commit()
-            conn.close()
-
-            print(f"DEBUG: Product saved with ID: {product_id}")
-            
-            context.user_data['current_product_id'] = product_id
-            context.user_data['admin_mode'] = 'adding_product_image1'
-            
-            await update.message.reply_text(
-                f"✅ Quantity: {quantity}\n\n"
-                f"🎉 Product added to database!\n\n"
-                f"Now send the first product image:",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
-                ]])
-            )
-        except ValueError:
-            await update.message.reply_text("❌ Invalid quantity! Enter a whole number (example: 5):")
-    else:
-        print(f"DEBUG: Wrong admin_mode. Expected 'adding_product_quantity', got: {context.user_data.get('admin_mode')}")
-        # Kui admin_mode ei ole õige, proovime käsitleda kui tavalist sõnumit
-        await update.message.reply_text("❌ Unexpected error. Please use /admin to return to admin panel.")
 
 async def handle_product_image1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Esimese pildi lisamine tootele"""
