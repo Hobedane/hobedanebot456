@@ -32,10 +32,6 @@ from handlers.admin_products import (
 from handlers.admin_stats import admin_stats
 from handlers.admin_exchange_rate import admin_exchange_rate
 
-# Import database and config
-from database import init_database
-from config import BOT_TOKEN
-
 # Import message handlers
 from handlers.admin_products import (
     handle_product_name, handle_product_price, handle_product_description, 
@@ -53,6 +49,10 @@ from handlers.admin_discounts import (
 from handlers.admin_content import handle_content_edit
 from handlers.admin_exchange_rate import handle_exchange_rate_edit
 from handlers.payments import handle_payment_source
+
+# Import database and config
+from database import init_database
+from config import BOT_TOKEN
 
 # Logging setup
 logging.basicConfig(
