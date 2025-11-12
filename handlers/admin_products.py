@@ -323,7 +323,7 @@ async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_
             
             await update.message.reply_text(
                 f"✅ Quantity: {quantity}\n\n"
-                f"🎉 Product added!\n\n"
+                f"🎉 Product added to database!\n\n"
                 f"Now send the first product image:",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔙 Back to Product Management", callback_data="admin_products")
