@@ -55,20 +55,5 @@ async def show_product_detail(update: Update, context: ContextTypes.DEFAULT_TYPE
     quantity_text = f"📦 Available: {product['quantity']} pcs\n\n" if product['quantity'] > 1 else ""
     message = f"🛍️ {product['name']}\n\n📝 {product['description']}\n💰 Price: {format_price_display(product['price'])}\n{quantity_text}"
     
+    # SHOW ONLY TEXT - NO IMAGE (image sent only after payment)
     await query.edit_message_text(message, reply_markup=reply_markup)
-
-async def buy_now(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    product_id = query.data.split("_")[2]
-    
-    conn = get_db_connection()
-    product = conn.execute('SELECT * FROM products WHERE id = ?', (product_id,)).fetchone()
-    conn.close()
-    
-    context.user_data['selected_product'] = dict(product)
-    context.user_data['selected_product_id'] = product_id
-    
-    # Ask for discount code first
-    from handlers.discount import ask_discount_code
-    await ask_discount_code(update, context, from_cart=False)
