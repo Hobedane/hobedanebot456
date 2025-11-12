@@ -193,6 +193,8 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Check admin modes
     admin_mode = context.user_data.get('admin_mode')
+
+    print(f"DEBUG: Processing admin_mode: {admin_mode}")
     
     if admin_mode == 'adding_product_name':
         await handle_product_name(update, context)
@@ -201,6 +203,7 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif admin_mode == 'adding_product_description':
         await handle_product_description(update, context)
     elif admin_mode == 'adding_product_quantity':
+        print("DEBUG: Calling handle_product_quantity")
         await handle_product_quantity(update, context)
     elif admin_mode == 'adding_product_image2_choice':
         await handle_image2_choice(update, context)
@@ -224,6 +227,8 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
         await handle_discount_max_uses(update, context)
     elif admin_mode == 'editing_exchange_rate':
         await handle_exchange_rate_edit(update, context)
+    else:
+        print(f"DEBUG: No matching admin_mode found: {admin_mode}")
     
     # Check content editing mode
     elif 'editing_content' in context.user_data:
@@ -235,3 +240,4 @@ async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 if __name__ == "__main__":
     main()
+
