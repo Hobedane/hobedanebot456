@@ -71,7 +71,6 @@ def main() -> None:
     # Command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_panel))
-    application.add_handler(CommandHandler("skip", handle_product_coordinates))
     
     # Callback handlers - ALL BUTTONS PROPERLY REGISTERED
     
