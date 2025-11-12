@@ -317,6 +317,8 @@ async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_
             product_id = conn.lastrowid
             conn.commit()
             conn.close()
+
+            print(f"DEBUG: Product saved with ID: {product_id}")
             
             context.user_data['current_product_id'] = product_id
             context.user_data['admin_mode'] = 'adding_product_image1'
@@ -331,6 +333,10 @@ async def handle_product_quantity(update: Update, context: ContextTypes.DEFAULT_
             )
         except ValueError:
             await update.message.reply_text("❌ Invalid quantity! Enter a whole number (example: 5):")
+    else:
+        print(f"DEBUG: Wrong admin_mode. Expected 'adding_product_quantity', got: {context.user_data.get('admin_mode')}")
+        # Kui admin_mode ei ole õige, proovime käsitleda kui tavalist sõnumit
+        await update.message.reply_text("❌ Unexpected error. Please use /admin to return to admin panel.")
 
 async def handle_product_image1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Esimese pildi lisamine tootele"""
