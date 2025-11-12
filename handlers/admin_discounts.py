@@ -1,130 +1,189 @@
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ConversationHandler
-from database import get_discounts, add_discount, update_discount, delete_discount
+from telegram.ext import ContextTypes
+from database import get_db_connection
 
-logger = logging.getLogger(__name__)
-
-# States for discount conversation
-DISCOUNT_CODE, DISCOUNT_PERCENTAGE, DISCOUNT_MAX_USES, DISCOUNT_CONFIRM = range(4)
-
-async def admin_discounts(update: Update, context: CallbackContext) -> None:
+async def admin_discounts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
     keyboard = [
-        [InlineKeyboardButton("Add Discount", callback_data='add_discount')],
-        [InlineKeyboardButton("View All Discounts", callback_data='view_discounts')],
-        [InlineKeyboardButton("Back", callback_data='admin_back')]
+        [InlineKeyboardButton("👤 Add Client-Specific", callback_data="add_client_discount")],
+        [InlineKeyboardButton("🌍 Add General Discount", callback_data="add_general_discount")],
+        [InlineKeyboardButton("📋 View All Codes", callback_data="view_all_discounts")],
+        [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
     ]
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text("Discount Management:", reply_markup=reply_markup)
+    await query.edit_message_text("🎫 Discount Code Management:", reply_markup=reply_markup)
 
-async def add_discount_start(update: Update, context: CallbackContext) -> int:
+async def admin_add_client_discount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
-    await query.edit_message_text("Enter discount code:")
-    return DISCOUNT_CODE
-
-async def add_discount_code(update: Update, context: CallbackContext) -> int:
-    code = update.message.text.strip().upper()
-    if not code:
-        await update.message.reply_text("Please enter a valid discount code:")
-        return DISCOUNT_CODE
-    
-    context.user_data['discount_code'] = code
-    await update.message.reply_text("Enter discount percentage (e.g., 10 for 10%):")
-    return DISCOUNT_PERCENTAGE
-
-async def add_discount_percentage(update: Update, context: CallbackContext) -> int:
-    try:
-        percentage = float(update.message.text.strip())
-        if percentage <= 0 or percentage > 100:
-            await update.message.reply_text("Please enter a valid percentage between 1 and 100:")
-            return DISCOUNT_PERCENTAGE
-    except ValueError:
-        await update.message.reply_text("Invalid percentage. Please enter a number:")
-        return DISCOUNT_PERCENTAGE
-    
-    context.user_data['discount_percentage'] = percentage
-    await update.message.reply_text("Enter maximum uses (or -1 for unlimited):")
-    return DISCOUNT_MAX_USES
-
-async def add_discount_max_uses(update: Update, context: CallbackContext) -> int:
-    try:
-        max_uses = int(update.message.text.strip())
-    except ValueError:
-        await update.message.reply_text("Invalid number. Please enter a number for maximum uses:")
-        return DISCOUNT_MAX_USES
-    
-    context.user_data['discount_max_uses'] = max_uses
-    
-    # Confirmation
-    code = context.user_data['discount_code']
-    percentage = context.user_data['discount_percentage']
-    max_uses = context.user_data['discount_max_uses']
-    
-    keyboard = [
-        [InlineKeyboardButton("Confirm", callback_data='confirm_discount')],
-        [InlineKeyboardButton("Cancel", callback_data='cancel_discount')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        f"Discount Details:\n"
-        f"Code: {code}\n"
-        f"Percentage: {percentage}%\n"
-        f"Max Uses: {max_uses if max_uses != -1 else 'Unlimited'}\n\n"
-        f"Confirm adding this discount?",
-        reply_markup=reply_markup
+    await query.edit_message_text(
+        "Enter client ID:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
+        ]])
     )
-    return DISCOUNT_CONFIRM
+    context.user_data['admin_mode'] = 'adding_client_discount_id'
 
-async def add_discount_confirm(update: Update, context: CallbackContext) -> int:
+async def handle_client_discount_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_client_discount_id':
+        try:
+            client_id = int(update.message.text)
+            context.user_data['new_discount'] = {'client_id': client_id, 'is_general': False}
+            context.user_data['admin_mode'] = 'adding_discount_code'
+            
+            await update.message.reply_text(
+                f"✅ Client ID: {client_id}\n\n"
+                f"Enter discount code:",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
+                ]])
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Invalid ID! Enter a number:")
+
+async def admin_add_general_discount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
-    if query.data == 'confirm_discount':
-        code = context.user_data['discount_code']
-        percentage = context.user_data['discount_percentage']
-        max_uses = context.user_data['discount_max_uses']
+    await query.edit_message_text(
+        "Enter discount code:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
+        ]])
+    )
+    context.user_data['admin_mode'] = 'adding_discount_code'
+    context.user_data['new_discount'] = {'is_general': True}
+
+async def handle_discount_code_input_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admini poolne discount code sisestus"""
+    if context.user_data.get('admin_mode') == 'adding_discount_code':
+        code = update.message.text.upper()
+        context.user_data['new_discount']['code'] = code
+        context.user_data['admin_mode'] = 'adding_discount_percent'
         
-        add_discount(code, percentage, max_uses)
-        await query.edit_message_text("✅ Discount added successfully!")
-    else:
-        await query.edit_message_text("❌ Discount addition canceled.")
-    
-    return ConversationHandler.END
+        await update.message.reply_text(
+            f"✅ Code: {code}\n\n"
+            f"Enter discount percentage (example: 10):",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
+            ]])
+        )
 
-async def view_discounts(update: Update, context: CallbackContext) -> None:
+async def handle_discount_percent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_discount_percent':
+        try:
+            percent = int(update.message.text)
+            context.user_data['new_discount']['percent'] = percent
+            context.user_data['admin_mode'] = 'adding_discount_expiry'
+            
+            await update.message.reply_text(
+                f"✅ Discount: {percent}%\n\n"
+                f"Enter expiry date (YYYY-MM-DD):",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
+                ]])
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Invalid percentage! Enter a number:")
+
+async def handle_discount_expiry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_discount_expiry':
+        expiry = update.message.text
+        discount_data = context.user_data['new_discount']
+        
+        if discount_data['is_general']:
+            context.user_data['admin_mode'] = 'adding_discount_max_uses'
+            await update.message.reply_text(
+                f"✅ Valid until: {expiry}\n\n"
+                f"Enter maximum uses (-1 for unlimited):",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")
+                ]])
+            )
+        else:
+            # Save client-specific discount code
+            conn = get_db_connection()
+            conn.execute('''INSERT INTO discount_codes (code, discount_percent, expires, is_general, client_id) 
+                          VALUES (?, ?, ?, ?, ?)''', 
+                        (discount_data['code'], discount_data['percent'], expiry, 0, discount_data['client_id']))
+            conn.commit()
+            conn.close()
+            
+            await update.message.reply_text(
+                f"✅ Client-specific discount code added!\n"
+                f"👤 Client ID: {discount_data['client_id']}\n"
+                f"🎫 Code: {discount_data['code']}\n"
+                f"📊 Discount: {discount_data['percent']}%\n"
+                f"📅 Valid until: {expiry}"
+            )
+            
+            # Reset state
+            context.user_data['admin_mode'] = None
+            context.user_data['new_discount'] = None
+
+async def handle_discount_max_uses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('admin_mode') == 'adding_discount_max_uses':
+        try:
+            max_uses = int(update.message.text)
+            discount_data = context.user_data['new_discount']
+            
+            # Save general discount code
+            conn = get_db_connection()
+            conn.execute('''INSERT INTO discount_codes (code, discount_percent, expires, is_general, max_uses) 
+                          VALUES (?, ?, ?, ?, ?)''', 
+                        (discount_data['code'], discount_data['percent'], discount_data.get('expiry'), 1, max_uses))
+            conn.commit()
+            conn.close()
+            
+            uses_text = "unlimited" if max_uses == -1 else f"{max_uses} uses"
+            await update.message.reply_text(
+                f"✅ General discount code added!\n"
+                f"🎫 Code: {discount_data['code']}\n"
+                f"📊 Discount: {discount_data['percent']}%\n"
+                f"📅 Valid until: {discount_data.get('expiry', 'Not set')}\n"
+                f"🔢 Max: {uses_text}"
+            )
+            
+            context.user_data['admin_mode'] = None
+            context.user_data['new_discount'] = None
+            
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number! Enter a number:")
+
+async def view_all_discounts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
-    discounts = get_discounts()
+    conn = get_db_connection()
+    discounts = conn.execute('''SELECT * FROM discount_codes ORDER BY is_general, created_at DESC''').fetchall()
+    conn.close()
+    
     if not discounts:
-        await query.edit_message_text("No discounts found.")
+        await query.edit_message_text("❌ No discount codes added yet.")
         return
     
-    text = "📋 All Discount Codes:\n\n"
+    message = "📋 All Discount Codes:\n\n"
     for discount in discounts:
-        used = discount.get('used', 0)
-        max_uses = discount.get('max_uses', 0)
-        status = "🟢 Active" if discount.get('active', True) else "🔴 Inactive"
-        
-        text += (
-            f"Code: {discount['code']}\n"
-            f"Percentage: {discount['percentage']}%\n"
-            f"Used: {used}/{max_uses if max_uses != -1 else 'Unlimited'}\n"
-            f"Status: {status}\n"
-            f"────────────────────\n"
-        )
+        if discount['is_general']:
+            message += f"🌍 **General code:** {discount['code']}\n"
+        else:
+            message += f"👤 **Client code:** {discount['code']}\n"
+        message += f"📊 Discount: {discount['discount_percent']}%\n"
+        message += f"📅 Valid until: {discount['expires']}\n"
+        if discount['is_general']:
+            uses = f"{discount['used_count']}/{'∞' if discount['max_uses'] == -1 else discount['max_uses']}"
+            message += f"🔢 Uses: {uses}\n"
+        status = "✅ ACTIVE" if discount['active'] else "❌ INACTIVE"
+        message += f"🎯 Status: {status}\n\n"
     
-    keyboard = [[InlineKeyboardButton("Back", callback_data='admin_discounts')]]
+    keyboard = [
+        [InlineKeyboardButton("🔙 Back to Discount Management", callback_data="admin_discounts")],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="back_to_main")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(text, reply_markup=reply_markup)
-
-async def cancel_discount(update: Update, context: CallbackContext) -> int:
-    await update.message.reply_text('Discount addition canceled.')
-    return ConversationHandler.END
+    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="Markdown")
