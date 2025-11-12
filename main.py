@@ -1,173 +1,237 @@
 import logging
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
-from config import BOT_TOKEN
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # Import handlers
-from handlers.start import start, about
-from handlers.products import products, view_product, add_to_cart_handler
-from handlers.cart import cart, clear_cart_handler, checkout
-from handlers.discounts import apply_discount, apply_discount_callback
-from handlers.payments import payment_methods, process_payment
-from handlers.content import welcome_message, success_message
-
-# Admin handlers
-from handlers.admin import admin, admin_exchange_rate, admin_stats, admin_back, set_exchange_rate, handle_exchange_rate_input
+from handlers.start import start, back_to_main
+from handlers.products import show_products, show_product_detail
+from handlers.cart import add_to_cart, view_cart, clear_cart
+from handlers.discounts import ask_discount_code, handle_discount_code_input, no_discount_code, proceed_to_payment
+from handlers.payments import buy_now, checkout_cart, show_payment_options, show_payment_details, confirm_payment
+from handlers.content import about_us, contact, website, rules, faq
+from handlers.admin import admin_panel
+from handlers.payment_approval import (
+    admin_approve_payment, admin_reject_payment, 
+    confirm_approve_payment, cancel_approve_payment,
+    confirm_reject_payment, cancel_reject_payment
+)
+from handlers.admin_content import admin_content, admin_edit_content_start, admin_edit_success_message
+from handlers.admin_discounts import (
+    admin_discounts, admin_add_client_discount, admin_add_general_discount, 
+    view_all_discounts
+)
+from handlers.admin_payments import (
+    admin_payments, edit_payment_start, remove_payment_start, 
+    confirm_remove_payment, add_new_crypto
+)
 from handlers.admin_products import (
-    admin_products, add_product_start, add_product_name, add_product_description, 
-    add_product_price, add_product_stock, add_product_image, add_second_image_handler, 
-    add_second_image_input, add_product_location, add_product_confirm, 
-    add_product_confirm_callback, view_products, delete_product_start, 
-    delete_product_confirm, cancel_product
+    admin_products, admin_edit_product, admin_add_product_start,
+    edit_product_name, edit_product_price, edit_product_description, edit_product_quantity,
+    edit_product_coordinates, edit_product_image1, edit_product_image2,
+    toggle_product_active, delete_product, confirm_delete_product
+)
+from handlers.admin_stats import admin_stats
+from handlers.admin_exchange_rate import admin_exchange_rate
+
+# Import database and config
+from database import init_database
+from config import BOT_TOKEN
+
+# Import message handlers
+from handlers.admin_products import (
+    handle_product_name, handle_product_price, handle_product_description, 
+    handle_product_quantity, handle_product_image, handle_product_coordinates,
+    handle_product_field_edit, handle_image2_choice
+)
+from handlers.admin_payments import (
+    handle_crypto_type, handle_crypto_address, handle_crypto_blockchain,
+    handle_payment_edit
 )
 from handlers.admin_discounts import (
-    admin_discounts, add_discount_start, add_discount_code, add_discount_percentage, 
-    add_discount_max_uses, add_discount_confirm, view_discounts, cancel_discount
+    handle_client_discount_id, handle_discount_code_input_admin,
+    handle_discount_percent, handle_discount_expiry, handle_discount_max_uses
 )
-from handlers.admin_content import (
-    admin_content, content_success, content_success_input, content_welcome, 
-    content_welcome_input, cancel_content
-)
-from handlers.admin_payments import admin_payments, toggle_payment
-from handlers.admin_stats import admin_stats as admin_stats_detailed
-from handlers.payment_approval import payment_approval
+from handlers.admin_content import handle_content_edit
+from handlers.admin_exchange_rate import handle_exchange_rate_edit
+from handlers.payments import handle_payment_source
 
-# Database
-from database import init_db, add_user
-
-# Set up logging
+# Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Import states from admin_products
-from handlers.admin_products import (
-    PRODUCT_NAME, PRODUCT_DESCRIPTION, PRODUCT_PRICE, PRODUCT_STOCK, 
-    PRODUCT_IMAGE, PRODUCT_SECOND_IMAGE, PRODUCT_LOCATION, PRODUCT_CONFIRM
-)
-
-async def start_command(update: Update, context: CallbackContext) -> None:
-    """Handle /start command"""
-    user = update.effective_user
-    add_user(user.id, user.username, user.first_name, user.last_name)
-    await start(update, context)
-
 def main() -> None:
     # Initialize database
-    logger.info("Initializing database...")
-    init_db()
+    init_database()
     
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
-
-    # Basic commands
-    application.add_handler(CommandHandler("start", start_command))
+    
+    # Command handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin_panel))
+    application.add_handler(CommandHandler("skip", handle_product_coordinates))
+    
+    # Callback handlers - ALL BUTTONS PROPERLY REGISTERED
     
     # Product handlers
-    application.add_handler(CallbackQueryHandler(products, pattern='^products$'))
-    application.add_handler(CallbackQueryHandler(view_product, pattern='^view_product_'))
-    application.add_handler(CallbackQueryHandler(add_to_cart_handler, pattern='^add_to_cart_'))
+    application.add_handler(CallbackQueryHandler(show_products, pattern="^view_products$"))
+    application.add_handler(CallbackQueryHandler(show_product_detail, pattern="^product_"))
+    application.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_to_cart_"))
+    application.add_handler(CallbackQueryHandler(buy_now, pattern="^buy_now_"))
     
     # Cart handlers
-    application.add_handler(CallbackQueryHandler(cart, pattern='^cart$'))
-    application.add_handler(CallbackQueryHandler(clear_cart_handler, pattern='^clear_cart$'))
-    application.add_handler(CallbackQueryHandler(checkout, pattern='^checkout$'))
-    
-    # Discount handlers
-    application.add_handler(CallbackQueryHandler(apply_discount, pattern='^apply_discount$'))
-    application.add_handler(CallbackQueryHandler(apply_discount_callback, pattern='^apply_discount_'))
+    application.add_handler(CallbackQueryHandler(view_cart, pattern="^view_cart$"))
+    application.add_handler(CallbackQueryHandler(clear_cart, pattern="^clear_cart$"))
+    application.add_handler(CallbackQueryHandler(checkout_cart, pattern="^checkout_cart$"))
     
     # Payment handlers
-    application.add_handler(CallbackQueryHandler(payment_methods, pattern='^payment_methods$'))
-    application.add_handler(CallbackQueryHandler(process_payment, pattern='^process_payment_'))
-    application.add_handler(CallbackQueryHandler(payment_approval, pattern='^payment_approval_'))
+    application.add_handler(CallbackQueryHandler(show_payment_options, pattern="^show_payment_options$"))
+    application.add_handler(CallbackQueryHandler(show_payment_details, pattern="^payment_"))
+    application.add_handler(CallbackQueryHandler(confirm_payment, pattern="^confirm_payment$"))
     
-    # Content handlers
-    application.add_handler(CallbackQueryHandler(welcome_message, pattern='^welcome_message$'))
-    application.add_handler(CallbackQueryHandler(success_message, pattern='^success_message$'))
-    application.add_handler(CallbackQueryHandler(about, pattern='^about$'))
+    # Discount handlers
+    application.add_handler(CallbackQueryHandler(no_discount_code, pattern="^no_discount_code$"))
+    application.add_handler(CallbackQueryHandler(proceed_to_payment, pattern="^proceed_to_payment$"))
     
-    # Admin handlers
-    application.add_handler(CallbackQueryHandler(admin, pattern='^admin$'))
-    application.add_handler(CallbackQueryHandler(admin_back, pattern='^admin_back$'))
-    application.add_handler(CallbackQueryHandler(admin_products, pattern='^admin_products$'))
-    application.add_handler(CallbackQueryHandler(admin_discounts, pattern='^admin_discounts$'))
-    application.add_handler(CallbackQueryHandler(admin_content, pattern='^admin_content$'))
-    application.add_handler(CallbackQueryHandler(admin_payments, pattern='^admin_payments$'))
-    application.add_handler(CallbackQueryHandler(admin_exchange_rate, pattern='^admin_exchange_rate$'))
-    application.add_handler(CallbackQueryHandler(admin_stats, pattern='^admin_stats$'))
-    application.add_handler(CallbackQueryHandler(admin_stats_detailed, pattern='^admin_stats_detailed$'))
-    application.add_handler(CallbackQueryHandler(set_exchange_rate, pattern='^set_exchange_rate$'))
-    application.add_handler(CallbackQueryHandler(toggle_payment, pattern='^toggle_payment_'))
-    application.add_handler(CallbackQueryHandler(view_products, pattern='^view_products$'))
-    application.add_handler(CallbackQueryHandler(view_discounts, pattern='^view_discounts$'))
-    application.add_handler(CallbackQueryHandler(delete_product_start, pattern='^delete_product$'))
-    application.add_handler(CallbackQueryHandler(delete_product_confirm, pattern='^delete_product_'))
+    # Admin payment approval handlers
+    application.add_handler(CallbackQueryHandler(admin_approve_payment, pattern="^approve_"))
+    application.add_handler(CallbackQueryHandler(admin_reject_payment, pattern="^reject_"))
+    application.add_handler(CallbackQueryHandler(confirm_approve_payment, pattern="^confirm_approve_"))
+    application.add_handler(CallbackQueryHandler(cancel_approve_payment, pattern="^cancel_approve_"))
+    application.add_handler(CallbackQueryHandler(confirm_reject_payment, pattern="^confirm_reject_"))
+    application.add_handler(CallbackQueryHandler(cancel_reject_payment, pattern="^cancel_reject_"))
     
-    # Exchange rate input handler
+    # Content page handlers
+    application.add_handler(CallbackQueryHandler(about_us, pattern="^about_us$"))
+    application.add_handler(CallbackQueryHandler(contact, pattern="^contact$"))
+    application.add_handler(CallbackQueryHandler(website, pattern="^website$"))
+    application.add_handler(CallbackQueryHandler(rules, pattern="^rules$"))
+    application.add_handler(CallbackQueryHandler(faq, pattern="^faq$"))
+    
+    # Admin panel handlers
+    application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
+    application.add_handler(CallbackQueryHandler(admin_content, pattern="^admin_content$"))
+    application.add_handler(CallbackQueryHandler(admin_discounts, pattern="^admin_discounts$"))
+    application.add_handler(CallbackQueryHandler(admin_stats, pattern="^admin_stats$"))
+    application.add_handler(CallbackQueryHandler(admin_exchange_rate, pattern="^admin_exchange_rate$"))
+    
+    # Product management handlers
+    application.add_handler(CallbackQueryHandler(admin_products, pattern="^admin_products$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_product, pattern="^admin_edit_product_"))
+    application.add_handler(CallbackQueryHandler(admin_add_product_start, pattern="^admin_add_product$"))
+    application.add_handler(CallbackQueryHandler(delete_product, pattern="^delete_product_"))
+    application.add_handler(CallbackQueryHandler(confirm_delete_product, pattern="^confirm_delete_"))
+    
+    # Product editing handlers
+    application.add_handler(CallbackQueryHandler(edit_product_name, pattern="^edit_name_"))
+    application.add_handler(CallbackQueryHandler(edit_product_price, pattern="^edit_price_"))
+    application.add_handler(CallbackQueryHandler(edit_product_description, pattern="^edit_desc_"))
+    application.add_handler(CallbackQueryHandler(edit_product_quantity, pattern="^edit_quantity_"))
+    application.add_handler(CallbackQueryHandler(edit_product_coordinates, pattern="^edit_coords_"))
+    application.add_handler(CallbackQueryHandler(edit_product_image1, pattern="^edit_image1_"))
+    application.add_handler(CallbackQueryHandler(edit_product_image2, pattern="^edit_image2_"))
+    application.add_handler(CallbackQueryHandler(toggle_product_active, pattern="^toggle_active_"))
+    
+    # Payment settings handlers
+    application.add_handler(CallbackQueryHandler(admin_payments, pattern="^admin_payments$"))
+    application.add_handler(CallbackQueryHandler(remove_payment_start, pattern="^remove_payment_"))
+    application.add_handler(CallbackQueryHandler(confirm_remove_payment, pattern="^confirm_remove_"))
+    application.add_handler(CallbackQueryHandler(edit_payment_start, pattern="^edit_payment_"))
+    application.add_handler(CallbackQueryHandler(add_new_crypto, pattern="^add_new_crypto$"))
+    
+    # Content management handlers
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_welcome_message$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_about_us$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_contact$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_website$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_rules$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_content_start, pattern="^admin_edit_faq$"))
+    application.add_handler(CallbackQueryHandler(admin_edit_success_message, pattern="^admin_edit_success_message$"))
+    
+    # Discount management handlers
+    application.add_handler(CallbackQueryHandler(admin_add_client_discount, pattern="^add_client_discount$"))
+    application.add_handler(CallbackQueryHandler(admin_add_general_discount, pattern="^add_general_discount$"))
+    application.add_handler(CallbackQueryHandler(view_all_discounts, pattern="^view_all_discounts$"))
+    
+    # Back handler
+    application.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
+    
+    # Unified text handler - MUST BE LAST
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, 
-        handle_exchange_rate_input
+        filters.TEXT & ~filters.COMMAND,
+        handle_all_messages
     ))
     
-    # Discount input handler
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, 
-        apply_discount_callback
-    ))
+    # Single image handler for all photos
+    application.add_handler(MessageHandler(filters.PHOTO, handle_product_image))
     
-    # Conversation handler for adding products
-    product_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(add_product_start, pattern='^add_product$')],
-        states={
-            PRODUCT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_product_name)],
-            PRODUCT_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_product_description)],
-            PRODUCT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_product_price)],
-            PRODUCT_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_product_stock)],
-            PRODUCT_IMAGE: [MessageHandler(filters.PHOTO, add_product_image)],
-            PRODUCT_SECOND_IMAGE: [
-                CallbackQueryHandler(add_second_image_handler, pattern='^(add_second_image|skip_second_image)$'),
-                MessageHandler(filters.PHOTO, add_second_image_input)
-            ],
-            PRODUCT_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_product_location)],
-            PRODUCT_CONFIRM: [CallbackQueryHandler(add_product_confirm_callback, pattern='^(confirm_product|cancel_product)$')]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_product)]
-    )
-    application.add_handler(product_conv_handler)
-    
-    # Conversation handler for adding discounts
-    discount_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(add_discount_start, pattern='^add_discount$')],
-        states={
-            0: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_discount_code)],
-            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_discount_percentage)],
-            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_discount_max_uses)],
-            3: [CallbackQueryHandler(add_discount_confirm, pattern='^(confirm_discount|cancel_discount)$')]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_discount)]
-    )
-    application.add_handler(discount_conv_handler)
-    
-    # Conversation handler for content management
-    content_conv_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(content_success, pattern='^content_success$'),
-            CallbackQueryHandler(content_welcome, pattern='^content_welcome$')
-        ],
-        states={
-            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, content_success_input)],
-            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, content_welcome_input)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_content)]
-    )
-    application.add_handler(content_conv_handler)
-
-    # Start the Bot
-    logger.info("Bot starting...")
+    # Start bot
+    print("🚀 Bot starting...")
     application.run_polling()
-    logger.info("Bot stopped")
+    print("✅ Bot is running!")
 
-if __name__ == '__main__':
+async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # Check for discount code waiting (CLIENT SIDE)
+    if context.user_data.get('waiting_discount_code'):
+        await handle_discount_code_input(update, context)
+        return
+    
+    # Check for payment source address waiting
+    if context.user_data.get('waiting_payment_source'):
+        await handle_payment_source(update, context)
+        return
+    
+    # Check for product field editing
+    if 'editing_product_id' in context.user_data and 'editing_field' in context.user_data:
+        await handle_product_field_edit(update, context)
+        return
+    
+    # Check admin modes
+    admin_mode = context.user_data.get('admin_mode')
+    
+    if admin_mode == 'adding_product_name':
+        await handle_product_name(update, context)
+    elif admin_mode == 'adding_product_price':
+        await handle_product_price(update, context)
+    elif admin_mode == 'adding_product_description':
+        await handle_product_description(update, context)
+    elif admin_mode == 'adding_product_quantity':
+        await handle_product_quantity(update, context)
+    elif admin_mode == 'adding_product_image2_choice':
+        await handle_image2_choice(update, context)
+    elif admin_mode == 'adding_product_coordinates':
+        await handle_product_coordinates(update, context)
+    elif admin_mode == 'adding_crypto_type':
+        await handle_crypto_type(update, context)
+    elif admin_mode == 'adding_crypto_address':
+        await handle_crypto_address(update, context)
+    elif admin_mode == 'adding_crypto_blockchain':
+        await handle_crypto_blockchain(update, context)
+    elif admin_mode == 'adding_client_discount_id':
+        await handle_client_discount_id(update, context)
+    elif admin_mode == 'adding_discount_code':
+        await handle_discount_code_input_admin(update, context)
+    elif admin_mode == 'adding_discount_percent':
+        await handle_discount_percent(update, context)
+    elif admin_mode == 'adding_discount_expiry':
+        await handle_discount_expiry(update, context)
+    elif admin_mode == 'adding_discount_max_uses':
+        await handle_discount_max_uses(update, context)
+    elif admin_mode == 'editing_exchange_rate':
+        await handle_exchange_rate_edit(update, context)
+    
+    # Check content editing mode
+    elif 'editing_content' in context.user_data:
+        await handle_content_edit(update, context)
+    
+    # Check payment address editing mode
+    elif 'editing_payment' in context.user_data:
+        await handle_payment_edit(update, context)
+
+if __name__ == "__main__":
     main()
